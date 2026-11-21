@@ -116,6 +116,10 @@
       { date: "4 ноября", who: "АО «Балтснаб»", doc: "УЧ-0974", sum: "118 200", status: "Проведено" },
       { date: "28 октября", who: "ИП Сорокин", doc: "УЧ-0910", sum: "15 600", status: "Проведено" }
     ];
+    if (!state.events) state.events = seedEvents();
+    if (!state.eventLog) state.eventLog = [];
+    if (!state.cal) state.cal = { mode: "week", cursor: dateKey(new Date()), selected: "evt_001", form: null };
+    watchReminders();
     state.browse.cols = (state.browse.cols || []).filter((id) => state.nodes[id] && state.nodes[id].type !== "file");
     if (!state.browse.cols.length) state.browse.cols = ["docs"];
     renderDesk();
@@ -407,6 +411,554 @@
     if (document.querySelector(`.win[data-app="${id}"]`)) Desk.paint(id);
   }
 
+  function seedEvents() {
+    const meet = new Date(Date.now() + 18 * 60000);
+    meet.setSeconds(0, 0);
+    const meetEnd = new Date(meet.getTime() + 30 * 60000);
+    return [
+      {
+        id: "evt_001",
+        title: "Планёрка проектного офиса",
+        start: "2026-11-21T10:00",
+        end: "2026-11-21T11:00",
+        allDay: false,
+        location: "Переговорная 3",
+        description: "",
+        guests: [{ email: "m.kotova@nord.example", status: "accepted" }],
+        reminder: 15,
+        isInvite: false,
+        inviteStatus: null
+      },
+      {
+        id: "evt_002",
+        title: "Срок по счетам",
+        start: "2026-11-21T16:30",
+        end: "2026-11-21T17:00",
+        allDay: false,
+        location: "",
+        description: "Счета, которые ещё не сверены с договором.",
+        guests: [],
+        reminder: 60,
+        isInvite: false,
+        inviteStatus: null
+      },
+      {
+        id: "evt_003",
+        title: "Срочное совещание",
+        start: isoLocal(meet),
+        end: isoLocal(meetEnd),
+        allDay: false,
+        location: "Онлайн",
+        description: "Просьба подтвердить участие и открыть документ: https://nord-meet.example/urgent",
+        guests: [{ email: "i.lebedeva@nord.example", status: "accepted" }],
+        reminder: 15,
+        isInvite: true,
+        inviteStatus: null
+      }
+    ];
+  }
+
+  function logEvent(action, data) {
+    if (!state.eventLog) state.eventLog = [];
+    state.eventLog.push({ action, at: new Date().toISOString(), data: data || {} });
+    persist();
+  }
+
+  let reminderWatch = false;
+  function watchReminders() {
+    if (reminderWatch) return;
+    reminderWatch = true;
+    function scan() {
+      const now = Date.now();
+      (state.events || []).forEach((event) => {
+        if (!event.reminder || event.reminded || event.inviteStatus === "declined") return;
+        const start = new Date(event.start).getTime();
+        const when = start - event.reminder * 60000;
+        if (now < when || now >= start) return;
+        event.reminded = true;
+        persist();
+        Desk.toast({
+          title: event.title,
+          text: event.isInvite ? "Приглашение скоро начнётся." : "Скоро начнётся.",
+          icon: "assets/icons/icon-calendar.png",
+          ms: 12000,
+          onClick: () => {
+            state.cal.selected = event.id;
+            state.cal.form = null;
+            state.cal.cursor = event.start.slice(0, 10);
+            Desk.openApp("calendar");
+          }
+        });
+      });
+    }
+    scan();
+    window.setInterval(scan, 15000);
+  }
+
+  function dateKey(date) {
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+
+  function isoLocal(date) {
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${dateKey(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function parseDay(key) {
+    const [year, month, day] = key.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  }
+
+  function sameDay(a, b) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }
+
+  function addDays(date, count) {
+    const next = new Date(date);
+    next.setDate(next.getDate() + count);
+    return next;
+  }
+
+  function startOfWeek(date) {
+    const next = new Date(date);
+    const shift = (next.getDay() + 6) % 7;
+    next.setDate(next.getDate() - shift);
+    next.setHours(0, 0, 0, 0);
+    return next;
+  }
+
+  function contactByEmail(email) {
+    return CONTACTS.find((person) => person.email === email);
+  }
+
+  function guestLabel(guest) {
+    const person = contactByEmail(guest.email);
+    const status = { pending: "ожидает", accepted: "принял", declined: "отклонил" }[guest.status] || "ожидает";
+    return `${person ? person.name : guest.email} — ${status}`;
+  }
+
+  function shiftCursor(dir) {
+    const cursor = parseDay(state.cal.cursor);
+    if (state.cal.mode === "month") cursor.setMonth(cursor.getMonth() + dir);
+    else cursor.setDate(cursor.getDate() + dir * (state.cal.mode === "week" ? 7 : 1));
+    state.cal.cursor = dateKey(cursor);
+  }
+
+  function periodTitle() {
+    const cursor = parseDay(state.cal.cursor);
+    const month = new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric" }).format(cursor);
+    if (state.cal.mode === "month") return month;
+    if (state.cal.mode === "day") return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric" }).format(cursor);
+    const start = startOfWeek(cursor);
+    const end = addDays(start, 6);
+    const left = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" }).format(start);
+    const right = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" }).format(end);
+    return `${left} – ${right}`;
+  }
+
+  function visibleDays() {
+    const cursor = parseDay(state.cal.cursor);
+    if (state.cal.mode === "day") return [cursor];
+    return Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(cursor), index));
+  }
+
+  function inWorkHours(event) {
+    const start = new Date(event.start);
+    const minutes = start.getHours() * 60 + start.getMinutes();
+    return minutes >= 8 * 60 && minutes < 20 * 60;
+  }
+
+  function eventsOn(day, events) {
+    return events.filter((event) => sameDay(new Date(event.start), day));
+  }
+
+  function paintCalendar(body) {
+    const win = body.closest(".win");
+    if (win && !win.dataset.calendar) {
+      win.dataset.calendar = "1";
+      win.style.width = "min(1100px, calc(100vw - 40px))";
+      win.style.height = "min(720px, calc(100vh - 100px))";
+    }
+    const shell = el("div", "cal");
+    shell.append(calendarSide(), calendarMain(), calendarDetail());
+    body.appendChild(shell);
+  }
+
+  function calendarSide() {
+    const side = el("aside", "cal-side");
+    const create = el("button", "btn", "Создать");
+    create.type = "button";
+    create.addEventListener("click", () => {
+      const start = new Date();
+      start.setMinutes(0, 0, 0);
+      start.setHours(start.getHours() + 1);
+      const end = new Date(start.getTime() + 60 * 60000);
+      state.cal.form = { id: null, title: "", start: isoLocal(start), end: isoLocal(end), allDay: false, location: "", description: "", guests: [], reminder: 15 };
+      state.cal.selected = null;
+      Desk.paint("calendar");
+    });
+    side.appendChild(create);
+    side.appendChild(miniMonth());
+    side.append(el("p", "place-label", "Календари"), el("p", "cal-own", "Рабочий"));
+    return side;
+  }
+
+  function miniMonth() {
+    const cursor = parseDay(state.cal.cursor);
+    const box = el("div", "mini");
+    const head = el("div", "mini-head");
+    head.append(el("b", "", new Intl.DateTimeFormat("ru-RU", { month: "long" }).format(cursor)));
+    box.appendChild(head);
+    const grid = el("div", "mini-grid");
+    ["П", "В", "С", "Ч", "П", "С", "В"].forEach((name) => grid.appendChild(el("span", "", name)));
+    const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+    const lead = (first.getDay() + 6) % 7;
+    for (let i = 0; i < lead; i += 1) grid.appendChild(el("span", "", ""));
+    const days = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
+    for (let day = 1; day <= days; day += 1) {
+      const date = new Date(cursor.getFullYear(), cursor.getMonth(), day);
+      const button = el("button", sameDay(date, new Date()) ? "today" : "", String(day));
+      button.type = "button";
+      if (dateKey(date) === state.cal.cursor) button.classList.add("on");
+      button.addEventListener("click", () => {
+        state.cal.cursor = dateKey(date);
+        Desk.paint("calendar");
+      });
+      grid.appendChild(button);
+    }
+    box.appendChild(grid);
+    return box;
+  }
+
+  function calendarMain() {
+    const main = el("div", "cal-main");
+    const bar = el("div", "cal-bar");
+    const prev = el("button", "btn ghost", "←");
+    const next = el("button", "btn ghost", "→");
+    const today = el("button", "btn ghost", "Сегодня");
+    [prev, next, today].forEach((button) => { button.type = "button"; });
+    prev.addEventListener("click", () => { shiftCursor(-1); Desk.paint("calendar"); });
+    next.addEventListener("click", () => { shiftCursor(1); Desk.paint("calendar"); });
+    today.addEventListener("click", () => { state.cal.cursor = dateKey(new Date()); Desk.paint("calendar"); });
+    const modes = el("div", "cal-modes");
+    [["day", "День"], ["week", "Неделя"], ["month", "Месяц"]].forEach(([id, title]) => {
+      const button = el("button", state.cal.mode === id ? "on" : "", title);
+      button.type = "button";
+      button.addEventListener("click", () => { state.cal.mode = id; Desk.paint("calendar"); });
+      modes.appendChild(button);
+    });
+    bar.append(prev, today, next, el("b", "cal-title", periodTitle()), modes);
+    main.appendChild(bar);
+    const board = el("div", "cal-board");
+    if (state.cal.mode === "month") board.appendChild(monthGrid());
+    else {
+      const outside = visibleDays().flatMap((day) => eventsOn(day, state.events).filter((event) => !event.allDay && !inWorkHours(event)));
+      if (outside.length) {
+        const extra = el("div", "cal-extra");
+        extra.appendChild(el("span", "", "Вне 08:00–20:00"));
+        outside.forEach((event) => {
+          const button = el("button", "chip", `${event.start.slice(11)} ${event.title}`);
+          button.type = "button";
+          button.addEventListener("click", () => openEvent(event.id));
+          extra.appendChild(button);
+        });
+        board.appendChild(extra);
+      }
+      board.appendChild(timeGrid());
+    }
+    if (state.ledger && state.ledger.some((row) => row.id === "dir-pay")) {
+      board.appendChild(el("p", "quiet", "Через 3 дня в расписании появится отметка: директор узнает о проведённом платеже."));
+    }
+    main.appendChild(board);
+    return main;
+  }
+
+  function timeGrid() {
+    const cursor = parseDay(state.cal.cursor);
+    const days = state.cal.mode === "day" ? [cursor] : Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(cursor), i));
+    const wrap = el("div", "cal-time");
+    wrap.style.setProperty("--days", String(days.length));
+    const head = el("div", "cal-time-head");
+    head.appendChild(el("span", "cal-gutter", ""));
+    days.forEach((day) => {
+      const name = new Intl.DateTimeFormat("ru-RU", { weekday: "short", day: "numeric" }).format(day);
+      head.appendChild(el("span", sameDay(day, new Date()) ? "today" : "", name));
+    });
+    const body = el("div", "cal-time-body");
+    const hours = el("div", "cal-hours");
+    for (let hour = 8; hour < 20; hour += 1) hours.appendChild(el("span", "", `${String(hour).padStart(2, "0")}:00`));
+    body.appendChild(hours);
+    days.forEach((day) => body.appendChild(dayColumn(day)));
+    wrap.append(head, body);
+    return wrap;
+  }
+
+  function dayColumn(day) {
+    const col = el("div", "cal-col");
+    for (let hour = 8; hour < 20; hour += 1) col.appendChild(el("i", "cal-hour"));
+    eventsOn(day, state.events).forEach((event) => {
+      if (event.allDay || !inWorkHours(event)) return;
+      const block = el("button", `cal-event${event.isInvite ? " invite" : ""}${event.inviteStatus === "declined" ? " declined" : ""}`, event.title);
+      block.type = "button";
+      const startMin = Math.max(8 * 60, new Date(event.start).getHours() * 60 + new Date(event.start).getMinutes());
+      const endMin = Math.min(20 * 60, new Date(event.end).getHours() * 60 + new Date(event.end).getMinutes());
+      block.style.top = `${((startMin - 8 * 60) / (12 * 60)) * 100}%`;
+      block.style.height = `${Math.max(7, ((endMin - startMin) / (12 * 60)) * 100)}%`;
+      block.addEventListener("click", () => openEvent(event.id));
+      col.appendChild(block);
+    });
+    return col;
+  }
+
+  function monthGrid() {
+    const cursor = parseDay(state.cal.cursor);
+    const grid = el("div", "cal-month");
+    ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].forEach((name) => grid.appendChild(el("span", "cal-dow", name)));
+    const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+    let day = addDays(first, -((first.getDay() + 6) % 7));
+    for (let i = 0; i < 42; i += 1) {
+      const date = new Date(day);
+      const cell = el("button", `cal-cell${date.getMonth() === cursor.getMonth() ? "" : " off"}${sameDay(date, new Date()) ? " today" : ""}`);
+      cell.type = "button";
+      cell.appendChild(el("b", "", String(date.getDate())));
+      eventsOn(date, state.events).slice(0, 3).forEach((event) => {
+        cell.appendChild(el("span", event.isInvite ? "chip invite" : "chip", event.title));
+      });
+      cell.addEventListener("click", () => {
+        state.cal.cursor = dateKey(date);
+        state.cal.mode = "day";
+        Desk.paint("calendar");
+      });
+      grid.appendChild(cell);
+      day = addDays(day, 1);
+    }
+    return grid;
+  }
+
+  function openEvent(id) {
+    state.cal.selected = id;
+    state.cal.form = null;
+    state.cal.confirmDelete = null;
+    Desk.paint("calendar");
+  }
+
+  function calendarDetail() {
+    const aside = el("aside", "cal-detail");
+    if (state.cal.form) aside.appendChild(eventForm());
+    else if (state.cal.selected) aside.appendChild(eventCard());
+    else aside.append(el("h2", "", "Событие"), el("p", "quiet", "Выберите встречу в сетке или создайте новую."));
+    return aside;
+  }
+
+  function eventCard() {
+    const event = state.events.find((item) => item.id === state.cal.selected);
+    const card = el("div", "");
+    if (!event) {
+      card.appendChild(el("p", "", "Событие не найдено."));
+      return card;
+    }
+    card.append(el("h2", "", event.title));
+    if (event.isInvite) card.appendChild(el("p", "invite-mark", "Приглашение"));
+    card.append(el("p", "", event.allDay ? "Весь день" : `${event.start.slice(11)} – ${event.end.slice(11)}`));
+    if (event.location) card.append(el("p", "", event.location));
+    if (event.description) {
+      const text = el("p", "cal-desc");
+      text.appendChild(linkedText(event, event.description));
+      card.appendChild(text);
+    }
+    if (event.guests.length) {
+      card.appendChild(el("p", "k", "Гости"));
+      event.guests.forEach((guest) => card.appendChild(el("p", "", guestLabel(guest))));
+    }
+    if (event.isInvite && !event.inviteStatus) {
+      const acts = el("div", "acts");
+      const accept = el("button", "btn", "Принять");
+      const decline = el("button", "btn ghost", "Отклонить");
+      accept.type = "button";
+      decline.type = "button";
+      accept.addEventListener("click", () => answerInvite(event, "accepted", "calendar_invite_accept"));
+      decline.addEventListener("click", () => answerInvite(event, "declined", "calendar_invite_decline"));
+      acts.append(accept, decline);
+      card.appendChild(acts);
+    } else if (event.inviteStatus) {
+      card.appendChild(el("p", "", event.inviteStatus === "accepted" ? "Вы приняли приглашение." : "Вы отклонили приглашение."));
+    }
+    const acts = el("div", "acts");
+    const edit = el("button", "btn ghost", "Редактировать");
+    const remove = el("button", "btn ghost", "Удалить");
+    edit.type = "button";
+    remove.type = "button";
+    edit.addEventListener("click", () => {
+      state.cal.form = Object.assign({}, event, { guests: event.guests.map((guest) => Object.assign({}, guest)) });
+      Desk.paint("calendar");
+    });
+    remove.addEventListener("click", () => {
+      if (event.guests.length && state.cal.confirmDelete !== event.id) {
+        state.cal.confirmDelete = event.id;
+        Desk.paint("calendar");
+        return;
+      }
+      state.events = state.events.filter((item) => item.id !== event.id);
+      state.cal.selected = null;
+      state.cal.confirmDelete = null;
+      persist();
+      Desk.paint("calendar");
+    });
+    acts.append(edit, remove);
+    card.appendChild(acts);
+    if (state.cal.confirmDelete === event.id) card.appendChild(el("p", "quiet", "У встречи есть гости. Нажмите «Удалить» ещё раз."));
+    return card;
+  }
+
+  function answerInvite(event, status, action) {
+    event.inviteStatus = status;
+    logEvent(action, { id: event.id });
+    Desk.paint("calendar");
+  }
+
+  function linkedText(event, text) {
+    const frag = document.createDocumentFragment();
+    text.split(/(https?:\/\/[^\s]+)/).forEach((part) => {
+      if (!/^https?:/.test(part)) {
+        frag.appendChild(document.createTextNode(part));
+        return;
+      }
+      const link = el("button", "cal-link", part);
+      link.type = "button";
+      link.addEventListener("click", () => {
+        logEvent("calendar_link_click", { id: event.id, url: part });
+        state.browserUrl = part;
+        Desk.openApp("browser");
+      });
+      frag.appendChild(link);
+    });
+    return frag;
+  }
+
+  function eventForm() {
+    const draft = state.cal.form;
+    const box = el("form", "cal-form");
+    box.appendChild(el("h2", "", draft.id ? "Редактирование" : "Новое событие"));
+    const title = document.createElement("input");
+    title.name = "title";
+    title.placeholder = "Название";
+    title.value = draft.title;
+    title.required = true;
+    const start = document.createElement("input");
+    start.type = "datetime-local";
+    start.value = draft.start;
+    const end = document.createElement("input");
+    end.type = "datetime-local";
+    end.value = draft.end;
+    const allDay = document.createElement("input");
+    allDay.type = "checkbox";
+    allDay.checked = Boolean(draft.allDay);
+    const allWrap = el("label", "cal-check", "Весь день");
+    allWrap.prepend(allDay);
+    const location = document.createElement("input");
+    location.placeholder = "Место";
+    location.value = draft.location;
+    const description = document.createElement("textarea");
+    description.placeholder = "Описание";
+    description.value = draft.description;
+    const reminder = document.createElement("select");
+    [[ "", "Без напоминания" ], [ "15", "За 15 минут" ], [ "60", "За 1 час" ], [ "1440", "За 1 день" ]].forEach(([value, label]) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      if (String(draft.reminder || "") === value) option.selected = true;
+      reminder.appendChild(option);
+    });
+    const guest = document.createElement("input");
+    guest.placeholder = "Гость, email";
+    const hints = el("div", "suggest");
+    guest.addEventListener("input", () => {
+      hints.replaceChildren();
+      const query = guest.value.trim().toLowerCase();
+      if (query.length < 2) return;
+      CONTACTS.filter((person) => person.name.toLowerCase().includes(query) || person.email.includes(query)).slice(0, 5).forEach((person) => {
+        const button = el("button", "", `${person.name} · ${person.email}`);
+        button.type = "button";
+        button.addEventListener("click", () => {
+          keepDraft(box);
+          if (!state.cal.form.guests.some((item) => item.email === person.email)) {
+            state.cal.form.guests.push({ email: person.email, status: "pending" });
+          }
+          Desk.paint("calendar");
+        });
+        hints.appendChild(button);
+      });
+    });
+    box.append(title, start, end, allWrap, location, description, reminder, el("p", "k", "Гости"), guest, hints);
+    draft.guests.forEach((person) => box.appendChild(el("p", "", guestLabel(person))));
+    if (draft.error) box.appendChild(el("p", "quiet", draft.error));
+    const acts = el("div", "acts");
+    const save = el("button", "btn", "Сохранить");
+    const cancel = el("button", "btn ghost", "Отмена");
+    save.type = "submit";
+    cancel.type = "button";
+    cancel.addEventListener("click", () => {
+      state.cal.form = null;
+      Desk.paint("calendar");
+    });
+    box.addEventListener("submit", (event) => {
+      event.preventDefault();
+      keepDraft(box);
+      const form = state.cal.form;
+      if (!form.title.trim()) {
+        form.error = "Нужно название.";
+        Desk.paint("calendar");
+        return;
+      }
+      if (!form.allDay && new Date(form.end) <= new Date(form.start)) {
+        form.error = "Окончание должно быть позже начала.";
+        Desk.paint("calendar");
+        return;
+      }
+      const saved = {
+        id: form.id || uid("evt"),
+        title: form.title.trim(),
+        start: form.allDay ? form.start.slice(0, 10) + "T00:00" : form.start,
+        end: form.allDay ? form.start.slice(0, 10) + "T23:59" : form.end,
+        allDay: Boolean(form.allDay),
+        location: form.location.trim(),
+        description: form.description,
+        guests: form.guests,
+        reminder: form.reminder ? Number(form.reminder) : null,
+        isInvite: Boolean(form.isInvite),
+        inviteStatus: form.inviteStatus || null,
+        reminded: false
+      };
+      const fresh = !form.id;
+      if (fresh) state.events.push(saved);
+      else state.events = state.events.map((item) => item.id === saved.id ? saved : item);
+      if (fresh) logEvent("calendar_event_create", { id: saved.id, title: saved.title });
+      state.cal.selected = saved.id;
+      state.cal.cursor = saved.start.slice(0, 10);
+      state.cal.form = null;
+      persist();
+      Desk.paint("calendar");
+      watchReminders();
+    });
+    acts.append(save, cancel);
+    box.appendChild(acts);
+    return box;
+  }
+
+  function keepDraft(box) {
+    const form = state.cal.form;
+    form.title = box.querySelector("[name=title]").value;
+    const times = box.querySelectorAll("input[type=datetime-local]");
+    form.start = times[0].value;
+    form.end = times[1].value;
+    form.allDay = box.querySelector("input[type=checkbox]").checked;
+    const fields = box.querySelectorAll("input:not([type=checkbox]):not([type=datetime-local]):not([name=title])");
+    form.location = fields[0].value;
+    form.description = box.querySelector("textarea").value;
+    form.reminder = box.querySelector("select").value;
+  }
+
   function paint(id, body) {
     if (id === "files") {
       paintFiles(body);
@@ -418,6 +970,10 @@
     }
     if (id === "portal") {
       paintPortal(body);
+      return true;
+    }
+    if (id === "calendar") {
+      paintCalendar(body);
       return true;
     }
     return false;

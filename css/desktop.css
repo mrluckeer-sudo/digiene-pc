@@ -730,7 +730,54 @@ button, input, textarea { font: inherit; color: inherit; }
   line-height: 1.45;
 }
 
-.win-body:has(.finder), .win-body:has(.portal) { overflow: hidden; display: flex; flex-direction: column; }
+.win-body:has(.finder), .win-body:has(.portal), .win-body:has(.cal) { overflow: hidden; display: flex; flex-direction: column; }
+.cal { flex: 1; min-height: 0; display: grid; grid-template-columns: 196px minmax(0, 1fr) 260px; background: white; }
+.cal-side, .cal-detail { min-height: 0; overflow: auto; padding: 14px; background: #f7f5f0; }
+.cal-detail { border-left: 1px solid var(--line); }
+.cal-side .btn { width: 100%; }
+.mini { margin-top: 16px; }
+.mini-head b { text-transform: capitalize; }
+.mini-grid, .cal-month { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.mini-grid { margin-top: 8px; }
+.mini-grid span, .mini-grid button, .cal-dow { text-align: center; font-size: 11px; color: var(--muted); }
+.mini-grid button, .cal-cell, .cal-event, .cal-link, .cal-modes button { border: 0; background: transparent; cursor: pointer; }
+.mini-grid button { border-radius: 99px; height: 24px; }
+.mini-grid button.on, .mini-grid button.today { background: var(--ink); color: white; }
+.cal-own { margin: 4px 0 0; font-weight: 600; }
+.cal-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.cal-bar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.cal-title { flex: 1; text-transform: capitalize; }
+.cal-modes { display: flex; background: var(--paper); border-radius: 999px; padding: 2px; }
+.cal-modes button { border-radius: 999px; padding: 6px 10px; }
+.cal-modes button.on { background: white; }
+.cal-board { min-height: 0; overflow: auto; padding: 8px 12px 16px; }
+.cal-time-head, .cal-time-body { display: grid; grid-template-columns: 52px repeat(var(--days, 7), minmax(0, 1fr)); }
+.cal-time-head span { font-size: 11px; color: var(--muted); text-align: center; padding-bottom: 6px; text-transform: capitalize; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-extra { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.cal-extra .chip { border: 0; cursor: pointer; }
+.cal-time-head span.today { color: var(--teal); font-weight: 700; }
+.cal-hours { display: flex; flex-direction: column; }
+.cal-hours span, .cal-hour { height: 44px; }
+.cal-hours span { font-size: 11px; color: var(--muted); }
+.cal-col { position: relative; border-left: 1px solid var(--line); }
+.cal-hour { display: block; border-top: 1px solid var(--line); }
+.cal-event { position: absolute; left: 3px; right: 3px; overflow: hidden; border-radius: 8px; background: #d9f4f7; color: var(--ink); text-align: left; padding: 2px 6px; font-size: 12px; font-weight: 600; }
+.cal-event.invite { background: #ffe7c2; }
+.cal-event.declined { opacity: 0.45; }
+.cal-month { gap: 6px; }
+.cal-cell { min-height: 78px; border-radius: 10px; background: #f7f5f0; text-align: left; padding: 6px; display: flex; flex-direction: column; gap: 3px; align-items: stretch; }
+.cal-cell.off { opacity: 0.45; }
+.cal-cell.today { outline: 2px solid var(--teal); }
+.cal-cell b { font-size: 12px; }
+.chip { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; background: #d9f4f7; border-radius: 6px; padding: 1px 4px; }
+.chip.invite { background: #ffe7c2; }
+.cal-form { display: flex; flex-direction: column; gap: 8px; }
+.cal-form input, .cal-form textarea, .cal-form select { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: white; }
+.cal-form textarea { min-height: 72px; resize: vertical; }
+.cal-check { display: flex; gap: 8px; align-items: center; }
+.cal-link { color: #0b6e75; text-decoration: underline; padding: 0; text-align: left; }
+.invite-mark { color: #9a6700; font-weight: 700; }
+.suggest button { display: block; width: 100%; text-align: left; border: 0; background: white; border-radius: 8px; padding: 6px 8px; cursor: pointer; }
 .portal { flex: 1; }
 .finder {
   flex: 1;

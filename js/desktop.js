@@ -559,7 +559,7 @@ function replyFor(id, text) {
 function paintBrowser(body) {
   const bar = el("form", "addr");
   const input = document.createElement("input");
-  input.value = "https://portal.nord.example";
+  input.value = state.browserUrl || "https://portal.nord.example";
   input.spellcheck = false;
   const go = el("button", "btn", "Открыть");
   go.type = "submit";
