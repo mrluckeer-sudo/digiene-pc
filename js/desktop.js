@@ -429,12 +429,6 @@ function paintMail(body) {
     paint("mail");
   });
   acts.append(reply, ask, flag);
-  if (mail.id === "director" && !state.ledger.some((row) => row.id === "dir-pay")) {
-    const pay = el("button", "btn ghost", "Оплатить по письму");
-    pay.type = "button";
-    pay.addEventListener("click", () => confirmPay(view));
-    acts.appendChild(pay);
-  }
   if (mail.id === "director" && state.ledger.length) {
     const review = el("button", "btn ghost", "Открыть разбор");
     review.type = "button";
@@ -732,4 +726,33 @@ function closePreview() {
 
 mount();
 
-window.Desk = { state, persist, openApp, paint, paintWho, applyIcons, paintNotes, refreshBadges, addLedger, openPreview, openNote, ROLES };
+function toast(options) {
+  const layer = document.getElementById("toasts");
+  if (!layer) return;
+  const node = el("button", "toast");
+  node.type = "button";
+  if (options.icon) node.appendChild(img(options.icon, ""));
+  const text = el("span", "toast-text");
+  text.append(el("b", "", options.title), el("span", "", options.text));
+  node.appendChild(text);
+  let gone = false;
+  function close() {
+    if (gone) return;
+    gone = true;
+    node.classList.add("out");
+    window.setTimeout(() => node.remove(), 260);
+  }
+  node.addEventListener("click", () => {
+    close();
+    if (typeof options.onClick === "function") {
+      options.onClick();
+      return;
+    }
+    if (options.chat) activeChat = options.chat;
+    if (options.app) openApp(options.app);
+  });
+  layer.appendChild(node);
+  window.setTimeout(close, options.ms || 6500);
+}
+
+window.Desk = { state, persist, openApp, paint, paintWho, applyIcons, paintNotes, refreshBadges, addLedger, openPreview, openNote, toast, ROLES };

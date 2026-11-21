@@ -109,6 +109,13 @@
     if (!state.mailUi) state.mailUi = { folder: "inbox", letter: "director", mode: "read", view: "mail", compose: null };
     if (!state.cwd) state.cwd = "docs";
     if (!state.browse) state.browse = { cols: ["disk", "docs"], sel: null };
+    if (!state.guides) state.guides = {};
+    if (!state.portalSection) state.portalSection = "pay";
+    if (!state.payments) state.payments = [
+      { date: "12 ноября", who: "ООО «Северная линия»", doc: "УЧ-0981", sum: "42 000", status: "Проведено" },
+      { date: "4 ноября", who: "АО «Балтснаб»", doc: "УЧ-0974", sum: "118 200", status: "Проведено" },
+      { date: "28 октября", who: "ИП Сорокин", doc: "УЧ-0910", sum: "15 600", status: "Проведено" }
+    ];
     state.browse.cols = (state.browse.cols || []).filter((id) => state.nodes[id] && state.nodes[id].type !== "file");
     if (!state.browse.cols.length) state.browse.cols = ["docs"];
     renderDesk();
@@ -118,6 +125,7 @@
     document.addEventListener("pointerdown", (event) => {
       if (!event.target.closest("#menu")) closeMenu();
     });
+    if (coachStep()) watchCoach();
   }
 
   function children(id) {
@@ -408,6 +416,10 @@
       paintMail(body);
       return true;
     }
+    if (id === "portal") {
+      paintPortal(body);
+      return true;
+    }
     return false;
   }
 
@@ -481,16 +493,21 @@
       bar.appendChild(clear);
     }
     if (state.pick && state.pick.kind === "save") {
+      const source = state.nodes[state.pick.nodeId];
       const save = el("button", "btn", "Сохранить сюда");
       save.type = "button";
+      if (source && /УЧ-1042/i.test(source.name)) save.dataset.coach = "pay-save";
       save.addEventListener("click", () => {
+        const saved = state.nodes[state.pick.nodeId];
         copyNode(state.pick.nodeId, activeFolder());
         state.pick = null;
+        if (saved && /УЧ-1042/i.test(saved.name)) coachDone("download");
         Desk.paint("files");
       });
       bar.appendChild(save);
     }
     if (state.pick && state.pick.kind === "attach") bar.appendChild(el("span", "hint", "Выберите файл — он приложится к письму"));
+    if (state.pick && state.pick.kind === "pay") bar.appendChild(el("span", "hint", "Выберите файл счёта на диске"));
     return bar;
   }
 
@@ -508,9 +525,10 @@
         row.type = "button";
         row.append(img(fileArt(node)), el("span", "", node.name));
         if (node.type !== "file") row.appendChild(el("i", "chev", "›"));
+        if (state.pick && state.pick.kind === "pay" && /УЧ-1042/i.test(node.name)) row.dataset.coach = "pay-file";
         row.addEventListener("click", () => chooseNode(node, index));
         row.addEventListener("dblclick", () => {
-          if (node.type === "file" && !(state.pick && state.pick.kind === "attach")) openNode(node);
+          if (node.type === "file" && !(state.pick && (state.pick.kind === "attach" || state.pick.kind === "pay"))) openNode(node);
         });
         row.addEventListener("contextmenu", (event) => {
           event.preventDefault();
@@ -552,6 +570,14 @@
   function chooseNode(node, colIndex) {
     if (state.pick && state.pick.kind === "attach" && node.type === "file") {
       addAttachment(node.id);
+      return;
+    }
+    if (state.pick && state.pick.kind === "pay" && node.type === "file") {
+      state.payFile = node.id;
+      state.pick = null;
+      state.portalSection = "pay";
+      coachDone("upload");
+      Desk.openApp("portal");
       return;
     }
     state.browse.cols = state.browse.cols.slice(0, colIndex + 1);
@@ -680,6 +706,7 @@
       });
       const save = el("button", "btn ghost", "Скачать");
       save.type = "button";
+      if (/УЧ-1042/i.test(file.name) || id === "invoice") save.dataset.coach = "pay-download";
       save.addEventListener("click", () => {
         state.pick = { kind: "save", nodeId: id };
         state.browse.cols = ["downloads"];
@@ -700,17 +727,225 @@
       button.addEventListener("click", run);
       acts.appendChild(button);
     });
-    if (letter.id === "director" && !state.ledger.some((row) => row.id === "dir-pay")) {
-      const pay = el("button", "btn ghost", "Оплатить по письму");
-      pay.type = "button";
-      pay.addEventListener("click", () => {
-        Desk.addLedger("dir-pay", "Оплата прошла по реквизитам, которые пришли в письме.", 3);
-        Desk.paint("mail");
-      });
-      acts.appendChild(pay);
-    }
     view.appendChild(acts);
+    if (letter.id === "director" || letter.id === "invoice" || letter.files.includes("invoice")) offerPayCoach();
     return view;
+  }
+
+  const coachText = {
+    "pay-download": "Счёт оплачивается в корпоративном портале. Для начала нужно сохранить счёт на компьютер.",
+    "pay-save": "Сохраните счёт в папку на компьютере.",
+    "pay-portal": "Зайдите в портал.",
+    "pay-upload": "Загрузите счёт.",
+    "pay-file": "Загрузите счёт.",
+    "pay-confirm": "Для подтверждения, нажмите на кнопку оплаты."
+  };
+
+  function coachStep() {
+    const value = state.guides && state.guides.payInvoice;
+    return value === "download" || value === "portal" || value === "upload" || value === "pay" ? value : "";
+  }
+
+  function offerPayCoach() {
+    if (coachStep() || state.guides.payInvoice === "done" || state.guides.payInvited) return;
+    state.guides.payInvited = true;
+    persist();
+    Desk.toast({
+      title: "Как оплачивать счета?",
+      text: "Нажмите, и подсказки появятся на кнопках.",
+      icon: "assets/icons/icon-portal.png",
+      ms: 12000,
+      onClick: () => {
+        state.guides.payInvoice = "download";
+        persist();
+        watchCoach();
+      }
+    });
+  }
+
+  function coachDone(step) {
+    if (coachStep() !== step) return;
+    const next = { download: "portal", portal: "upload", upload: "pay", pay: "done" };
+    state.guides.payInvoice = next[step];
+    persist();
+    if (state.guides.payInvoice === "done") clearCoach();
+    else placeCoach();
+  }
+
+  function watchCoach() {
+    if (watchCoach.timer) return;
+    watchCoach.timer = window.setInterval(placeCoach, 250);
+    placeCoach();
+  }
+
+  function clearCoach() {
+    window.clearInterval(watchCoach.timer);
+    watchCoach.timer = 0;
+    const ring = document.getElementById("coachRing");
+    const tip = document.getElementById("coachTip");
+    if (ring) ring.remove();
+    if (tip) tip.remove();
+  }
+
+  function coachTarget() {
+    const step = coachStep();
+    if (step === "download") return document.querySelector("[data-coach='pay-save']") || document.querySelector("[data-coach='pay-download']");
+    if (step === "portal") return document.querySelector(".dicon[data-app='portal']");
+    if (step === "upload") return document.querySelector("[data-coach='pay-file']") || document.querySelector("[data-coach='pay-upload']");
+    if (step === "pay") return document.querySelector("[data-coach='pay-confirm']");
+    return null;
+  }
+
+  function placeCoach() {
+    const target = coachTarget();
+    if (!target) {
+      const ring = document.getElementById("coachRing");
+      const tip = document.getElementById("coachTip");
+      if (ring) ring.hidden = true;
+      if (tip) tip.hidden = true;
+      return;
+    }
+    if (placeCoach.last !== target) {
+      placeCoach.last = target;
+      target.scrollIntoView({ block: "center", inline: "nearest" });
+    }
+    const desk = document.getElementById("desk").getBoundingClientRect();
+    const rect = target.getBoundingClientRect();
+    let ring = document.getElementById("coachRing");
+    let tip = document.getElementById("coachTip");
+    if (!ring) {
+      ring = document.createElement("div");
+      ring.id = "coachRing";
+      tip = document.createElement("div");
+      tip.id = "coachTip";
+      const skip = document.createElement("button");
+      skip.type = "button";
+      skip.className = "coach-skip";
+      skip.textContent = "Пропустить";
+      skip.addEventListener("click", () => {
+        state.guides.payInvoice = "done";
+        persist();
+        clearCoach();
+      });
+      tip.append(document.createElement("p"), skip);
+      document.getElementById("desk").append(ring, tip);
+    }
+    ring.hidden = false;
+    tip.hidden = false;
+    const pad = 6;
+    ring.style.left = `${rect.left - desk.left - pad}px`;
+    ring.style.top = `${rect.top - desk.top - pad}px`;
+    ring.style.width = `${rect.width + pad * 2}px`;
+    ring.style.height = `${rect.height + pad * 2}px`;
+    tip.querySelector("p").textContent = coachText[target.dataset.coach || "pay-portal"];
+    const width = 250;
+    let left = rect.right - desk.left + 14;
+    let top = rect.top - desk.top;
+    if (left + width > desk.width - 12) left = Math.max(12, rect.left - desk.left - width - 14);
+    if (top + 110 > desk.height - 80) top = Math.max(12, desk.height - 190);
+    tip.style.left = `${left}px`;
+    tip.style.top = `${top}px`;
+  }
+
+  function paintPortal(body) {
+    const win = body.closest(".win");
+    if (win && !win.dataset.portal) {
+      win.dataset.portal = "1";
+      win.style.width = "min(920px, calc(100vw - 40px))";
+      win.style.height = "min(640px, calc(100vh - 110px))";
+    }
+    const shell = el("div", "portal");
+    const nav = document.createElement("nav");
+    [["pay", "Оплата контрагентам"], ["docs", "Договоры"], ["updates", "Обновления"], ["hr", "Кадры"]].forEach(([id, title]) => {
+      const button = el("button", state.portalSection === id ? "on" : "", title);
+      button.type = "button";
+      button.addEventListener("click", () => {
+        state.portalSection = id;
+        Desk.paint("portal");
+      });
+      nav.appendChild(button);
+    });
+    const page = el("div", "portal-page");
+    if (state.portalSection === "docs") page.append(el("h2", "", "Договоры"), contract("ООО «Северный контур»", "Договор 14-С, поставка"), contract("АО «Балтснаб»", "Договор 08-Б"));
+    else if (state.portalSection === "updates") page.append(el("h2", "", "Обновления"), el("p", "", "Клиент рабочего места 4.2 от 18 ноября. Его ставят из этого раздела."));
+    else if (state.portalSection === "hr") page.append(el("h2", "", "Кадры"), el("p", "", "Карта для зарплаты подтверждается здесь. Текущая заканчивается на 4412."));
+    else page.appendChild(payPage());
+    shell.append(nav, page);
+    body.appendChild(shell);
+    if (coachStep() === "portal") coachDone("portal");
+  }
+
+  function contract(name, text) {
+    const row = el("div", "pay-file");
+    row.append(el("b", "", name), el("span", "", text));
+    return row;
+  }
+
+  function payPage() {
+    const page = el("div", "");
+    page.append(el("h2", "", "Оплата контрагентам"), el("p", "quiet", "Счёт загружают файлом с компьютера и проводят здесь."));
+    const file = state.nodes[state.payFile];
+    const picked = el("div", "pay-file");
+    if (file) {
+      picked.append(img(fileArt(file)), el("b", "", file.name));
+      const clear = el("button", "btn ghost", "Убрать");
+      clear.type = "button";
+      clear.addEventListener("click", () => {
+        state.payFile = null;
+        Desk.paint("portal");
+      });
+      picked.appendChild(clear);
+    } else picked.appendChild(el("span", "", "Файл ещё не выбран"));
+    const load = el("button", "btn", "Загрузить счёт");
+    load.type = "button";
+    load.dataset.coach = "pay-upload";
+    load.addEventListener("click", () => {
+      state.pick = { kind: "pay" };
+      state.browse.cols = ["disk", "docs"];
+      state.browse.sel = null;
+      state.cwd = "docs";
+      Desk.openApp("files");
+    });
+    const pay = el("button", file ? "btn" : "btn ghost", "Оплатить");
+    pay.type = "button";
+    pay.dataset.coach = "pay-confirm";
+    pay.disabled = !file;
+    pay.addEventListener("click", () => conductPayment(file));
+    const acts = el("div", "acts");
+    acts.append(load, pay);
+    page.append(picked, acts);
+    if (state.payNote) page.appendChild(el("p", "", state.payNote));
+    const table = document.createElement("table");
+    table.className = "pay-table";
+    const head = document.createElement("tr");
+    ["Дата", "Контрагент", "Документ", "Сумма", "Статус"].forEach((title) => head.appendChild(el("th", "", title)));
+    table.appendChild(head);
+    state.payments.forEach((row) => {
+      const line = document.createElement("tr");
+      [row.date, row.who, row.doc, row.sum, row.status].forEach((value) => line.appendChild(el("td", "", value)));
+      table.appendChild(line);
+    });
+    page.appendChild(table);
+    return page;
+  }
+
+  function conductPayment(node) {
+    if (!node) return;
+    const known = /УЧ-1042/i.test(node.name);
+    const row = known
+      ? { date: "21 ноября", who: "ООО «Северный контур»", doc: "УЧ-1042", sum: "186 400", status: "Проведено" }
+      : { date: "21 ноября", who: "По файлу", doc: node.name.replace(/\.[^.]+$/, ""), sum: "—", status: "Проведено" };
+    if (known && state.payments.some((item) => item.doc === "УЧ-1042")) state.payNote = "Этот счёт уже проведён.";
+    else {
+      state.payments.unshift(row);
+      state.payNote = "Оплата проведена.";
+      if (known) Desk.addLedger("dir-pay", "Счёт УЧ-1042 проведён в портале по файлу с диска.", 3);
+    }
+    state.payFile = null;
+    coachDone("pay");
+    persist();
+    Desk.paint("portal");
+    if (document.querySelector('.win[data-app="calendar"]')) Desk.paint("calendar");
   }
 
   function personLine(person) {

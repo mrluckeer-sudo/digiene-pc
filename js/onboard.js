@@ -2,10 +2,9 @@
   const desk = window.Desk;
   if (!desk || desk.state.onboardingDone) return;
 
-  const { state, persist, openApp, paintWho, applyIcons, paintNotes, refreshBadges, ROLES } = desk;
+  const { state, persist, paintWho, applyIcons, paintNotes, refreshBadges, ROLES } = desk;
   const root = document.getElementById("onboard");
   const installIds = ["mail", "messenger", "browser", "files", "calendar", "portal"];
-  const picked = new Set(installIds);
   let step = 0;
   let hintTimer = 0;
   let passwordLabel = "";
@@ -65,9 +64,15 @@
     else if (step === 3) screenPassword(card);
     else if (step === 4) screenKey(card);
     else if (step === 5) screenApps(card);
-    else if (step === 6) screenRules(card);
-    else screenHook(card);
+    else screenRules(card);
+    card.appendChild(skipControl());
     root.appendChild(card);
+  }
+
+  function skipControl() {
+    const node = button("Пропустить онбординг", complete);
+    node.classList.add("ghost", "skip");
+    return node;
   }
 
   function screenTeaser(card) {
@@ -189,29 +194,28 @@
   }
 
   function screenApps(card) {
-    card.append(el("p", "ob-kicker", "Рабочие приложения"), el("h1", "", "Что поставить"), el("p", "", "Неустановленные приложения не присылают событий."));
-    const grid = el("div", "apps");
+    card.append(el("p", "ob-kicker", "Рабочие приложения"), el("h1", "", "Что здесь есть"), el("p", "", "Все приложения уже стоят. Ниже — зачем каждое нужно в работе и в учебном дне."));
+    const list = el("div", "app-blurbs");
+    const about = {
+      mail: ["Письма коллег, контрагентов и служб компании.", "Сюда приходят просьба директора, счёт и письмо про обновление."],
+      messenger: ["Короткая переписка с сотрудниками.", "Миша из продаж пишет про письмо директора."],
+      browser: ["Открывает рабочие сайты.", "Через него смотрят внутренний портал."],
+      files: ["Документы и папки на компьютере.", "Здесь лежат счёт, форма кадров и регламент."],
+      calendar: ["Встречи и сроки дня.", "Показывает, если по рабочему письму уже есть действие."],
+      portal: ["Договоры, обновления и оплата контрагентам.", "Счёт из письма проводят здесь: файл скачивают и загружают с диска."]
+    };
     apps.forEach(([id, title, icon]) => {
-      const node = el("button", `app-toggle${picked.has(id) ? " on" : ""}`);
-      node.type = "button";
+      const row = el("div", "app-blurb");
       const image = document.createElement("img");
       image.src = icon;
       image.alt = "";
-      node.append(image, el("span", "", title));
-      node.addEventListener("click", () => {
-        if (picked.has(id)) picked.delete(id);
-        else picked.add(id);
-        node.classList.toggle("on", picked.has(id));
-      });
-      grid.appendChild(node);
+      const text = el("div", "");
+      const [work, scene] = about[id];
+      text.append(el("b", "", title), el("p", "", `Для работы: ${work}`), el("p", "", `В учебном дне: ${scene}`));
+      row.append(image, text);
+      list.appendChild(row);
     });
-    card.append(grid, button("Дальше", () => {
-      state.installed = [...picked];
-      persist();
-      applyIcons();
-      step = 6;
-      draw();
-    }));
+    card.append(list, button("Дальше", () => { step = 6; draw(); }));
   }
 
   function screenRules(card) {
@@ -228,36 +232,28 @@
     ["Тут будут писать мошенники. И коллеги. Иногда их сложно отличить.", "Ошибаться можно. Важно, что ты сделаешь после.", "После сессии будет короткий разбор: что произошло и почему. Не оценка."].forEach((line) => {
       list.appendChild(el("li", "", line));
     });
-    card.append(who, el("h1", "", "Пара правил"), list, button("Дальше", () => { step = 7; draw(); }));
+    card.append(who, el("h1", "", "Пара правил"), list, button("К рабочему столу", complete));
   }
 
-  function screenHook(card) {
-    root.classList.add("hook");
-    const photo = document.createElement("img");
-    photo.src = "assets/people/misha.png";
-    photo.alt = "";
-    const text = el("div");
-    text.append(
-      el("b", "", "Миша Соколов"),
-      el("p", "", "Привет, это Миша из отдела продаж. Ты уже получил доступ? Загляни в почту, там срочное от директора.")
-    );
-    const head = el("div", "hook-card");
-    head.append(photo, text);
-    const needsMail = !picked.has("mail");
-    card.append(head, button(needsMail ? "Поставить почту и открыть" : "Открыть почту", finish));
-  }
-
-  function finish() {
-    if (!picked.has("mail")) picked.add("mail");
-    state.installed = [...picked];
+  function complete() {
+    state.installed = installIds.slice();
     state.onboardingDone = true;
     persist();
     paintWho();
     applyIcons();
     paintNotes();
     refreshBadges();
+    leaveBoot();
     root.hidden = true;
     root.replaceChildren();
-    openApp("mail", { force: true });
+    window.setTimeout(() => {
+      desk.toast({
+        app: "messenger",
+        chat: "misha",
+        icon: "assets/people/misha.png",
+        title: "Миша Соколов",
+        text: "Глянь почту. Там срочное от директора. Я бы сам не платил, пока реквизиты не сверены."
+      });
+    }, 700);
   }
 }());
