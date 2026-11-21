@@ -1,0 +1,6 @@
+.DS_Store
+docs/~$*
+.env
+.env.*
+*.pem
+*credentials*

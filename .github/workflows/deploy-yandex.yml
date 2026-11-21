@@ -1,0 +1,57 @@
+name: Deploy to Yandex Object Storage
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-digiene-pc
+  cancel-in-progress: true
+
+env:
+  # Жёстко этот бакет. Секрет другого сайта сюда не подставлять.
+  BUCKET: digiene-pc
+  DIST_DIR: dist
+  S3_ENDPOINT: https://storage.yandexcloud.net
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build static site
+        run: |
+          set -euo pipefail
+          rm -rf "$DIST_DIR"
+          mkdir -p "$DIST_DIR"
+          cp index.html "$DIST_DIR/"
+          cp -R css js assets "$DIST_DIR/"
+          find "$DIST_DIR" -type f | sort
+
+      - name: Sync to digiene-pc
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.YC_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.YC_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ru-central1
+        run: |
+          set -euo pipefail
+          if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+            echo "::error::В репозитории нет секретов YC_ACCESS_KEY_ID и YC_SECRET_ACCESS_KEY. См. docs/DEPLOY.md"
+            exit 1
+          fi
+          aws s3 sync "./$DIST_DIR/assets/" "s3://$BUCKET/assets/" \
+            --endpoint-url "$S3_ENDPOINT" \
+            --cache-control "public,max-age=86400" \
+            --delete
+          aws s3 sync "./$DIST_DIR/" "s3://$BUCKET/" \
+            --endpoint-url "$S3_ENDPOINT" \
+            --exclude "assets/*" \
+            --cache-control "no-cache, max-age=0, must-revalidate" \
+            --delete
+          echo "Deployed → https://digiene-pc.website.yandexcloud.net/"
