@@ -5,13 +5,13 @@
   const ME = { email: "user@nord.example" };
 
   const CONTACTS = [
-    { dept: "Дирекция", name: "Ирина Сергеевна Лебедева", email: "i.lebedeva@nord.example" },
-    { dept: "Дирекция", name: "Павел Игоревич Орлов", email: "p.orlov@nord.example" },
-    { dept: "Продажи", name: "Михаил Андреевич Соколов", email: "m.sokolov@nord.example" },
-    { dept: "Проектный офис", name: "Марина Олеговна Котова", email: "m.kotova@nord.example" },
-    { dept: "IT", name: "Сергей Павлович Плотников", email: "s.plotnikov@nord.example" },
-    { dept: "Кадры", name: "Ольга Викторовна Репина", email: "o.repina@nord.example" },
-    { dept: "Информационная безопасность", name: "Кирилл Денисович Антонов", email: "k.antonov@nord.example" }
+    { dept: "Дирекция", name: "Ирина Сергеевна Лебедева", email: "i.lebedeva@nord.example", avatar: "assets/people/woman_2.png" },
+    { dept: "Дирекция", name: "Павел Игоревич Орлов", email: "p.orlov@nord.example", avatar: "assets/people/man_3.png" },
+    { dept: "Продажи", name: "Михаил Андреевич Соколов", email: "m.sokolov@nord.example", avatar: "assets/people/man_1.png" },
+    { dept: "Проектный офис", name: "Марина Олеговна Котова", email: "m.kotova@nord.example", avatar: "assets/people/woman_1.png" },
+    { dept: "IT", name: "Сергей Павлович Плотников", email: "s.plotnikov@nord.example", avatar: "assets/people/man_4.png" },
+    { dept: "Кадры", name: "Ольга Викторовна Репина", email: "o.repina@nord.example", avatar: "assets/people/woman_3.png" },
+    { dept: "Информационная безопасность", name: "Кирилл Денисович Антонов", email: "k.antonov@nord.example", avatar: "assets/people/man_2.png" }
   ];
 
   let serial = 1;
@@ -124,6 +124,7 @@
     if (!state.seen) state.seen = { "c-general": 0, "c-sales": 1, "c-projects": 1, "c-it": 1, "c-hr": 1, misha: 0, director: 1, assistant: 1, colleague: 1, it: 1, hr: 1 };
     if (!state.hiddenMsgs) state.hiddenMsgs = [];
     if (!state.chatDrafts) state.chatDrafts = {};
+    state.typing = {};
     if (!state.requests) state.requests = [{ id: "req1", kind: "Отпуск", detail: "2–6 декабря", status: "Согласовано" }];
     if (!state.tickets) state.tickets = [{ id: "t1", title: "Не печатает договор", who: "Марина Котова", status: "В работе" }];
     if (!state.accessReqs) state.accessReqs = [];
@@ -980,13 +981,13 @@
   ];
 
   const DM_PEOPLE = {
-    misha: { name: "Миша Соколов", role: "Продажи", city: "Москва", avatar: "assets/people/misha.png" },
-    director: { name: "Ирина Лебедева", role: "Генеральный директор", city: "в пути", avatar: "assets/people/director.png" },
-    assistant: { name: "Павел Орлов", role: "Ассистент директора", city: "Москва", avatar: "assets/people/assistant.png" },
-    colleague: { name: "Марина Котова", role: "Проектный офис", city: "Казань", avatar: "assets/people/colleague.png" },
-    it: { name: "Сергей Плотников", role: "IT", city: "Москва", avatar: "assets/people/it.png" },
-    hr: { name: "Ольга Репина", role: "Кадры", city: "Москва", avatar: "assets/people/hr.png" },
-    security: { name: "Кирилл Антонов", role: "Информационная безопасность", city: "Москва", avatar: "" }
+    misha: { name: "Миша Соколов", role: "Продажи", city: "Москва", avatar: "assets/people/man_1.png" },
+    director: { name: "Ирина Лебедева", role: "Генеральный директор", city: "в пути", avatar: "assets/people/woman_2.png" },
+    assistant: { name: "Павел Орлов", role: "Ассистент директора", city: "Москва", avatar: "assets/people/man_3.png" },
+    colleague: { name: "Марина Котова", role: "Проектный офис", city: "Казань", avatar: "assets/people/woman_1.png" },
+    it: { name: "Сергей Плотников", role: "IT", city: "Москва", avatar: "assets/people/man_4.png" },
+    hr: { name: "Ольга Репина", role: "Кадры", city: "Москва", avatar: "assets/people/woman_3.png" },
+    security: { name: "Кирилл Антонов", role: "Информационная безопасность", city: "Москва", avatar: "assets/people/man_2.png" }
   };
 
   const DM_EMAIL = {
@@ -1103,12 +1104,27 @@
   function postChat(id, line) {
     const pack = state.chat[id] || (state.chat[id] = []);
     pack.push(Object.assign({ id: uid("msg"), at: new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" }).format(new Date()) }, line));
-    if (!isChannel(id)) {
-      pack.push({ id: uid("msg"), who: id, text: dmReply(id, line.text), at: "сейчас" });
-    }
     state.seen[id] = chatLines(id).length;
     persist();
     paintMsgBadge();
+    if (!isChannel(id)) scheduleReply(id, dmReply(id, line.text));
+  }
+
+  function scheduleReply(id, text) {
+    if (!state.typing) state.typing = {};
+    state.typing[id] = (state.typing[id] || 0) + 1;
+    const wait = 1200 + Math.min(1400, String(text || "").length * 18);
+    window.setTimeout(() => {
+      const pack = state.chat[id] || (state.chat[id] = []);
+      pack.push({ id: uid("msg"), who: id, text, at: "сейчас" });
+      state.typing[id] -= 1;
+      if (state.typing[id] <= 0) delete state.typing[id];
+      if (state.chatOpen === id) state.seen[id] = chatLines(id).length;
+      persist();
+      paintMsgBadge();
+      const win = document.querySelector('.win[data-app="messenger"]');
+      if (win && !win.classList.contains("min")) Desk.paint("messenger");
+    }, wait);
   }
 
   function dmReply(id, text) {
@@ -1231,7 +1247,8 @@
     const draft = state.chatDrafts[id] || { text: "", files: [] };
     const main = el("div", "slack-main");
     const head = el("div", "slack-head");
-    head.append(el("b", "", channel ? `# ${channel.title}` : person.name), el("p", "quiet", channel ? channel.topic : person.role));
+    const status = channel ? channel.topic : (state.typing && state.typing[id] ? "печатает…" : person.role);
+    head.append(el("b", "", channel ? `# ${channel.title}` : person.name), el("p", status === "печатает…" ? "typing-status" : "quiet", status));
     const log = el("div", "slack-log");
     chatLines(id).forEach((line) => log.appendChild(messageRow(id, line)));
     const form = el("form", "slack-compose");
@@ -1283,13 +1300,21 @@
       persist();
       Desk.paint("messenger");
     });
-    main.append(head, log, form);
+    main.append(head, log);
+    if (!channel && state.typing && state.typing[id]) {
+      const hint = el("p", "typing-hint");
+      const dots = el("span", "typing-dots");
+      dots.append(el("i"), el("i"), el("i"));
+      hint.append(dots, document.createTextNode(`${person.name.split(" ")[0]} печатает`));
+      main.appendChild(hint);
+    }
+    main.appendChild(form);
     if (focusComposer) window.setTimeout(() => area.focus(), 0);
     return main;
   }
 
   function messageRow(roomId, line) {
-    const author = line.who === "you" ? { name: state.name.trim() || "Вы", avatar: "" } : (DM_PEOPLE[line.who] || { name: "НОРД", avatar: "" });
+    const author = line.who === "you" ? { name: state.name.trim() || "Вы", avatar: state.avatar || "" } : (DM_PEOPLE[line.who] || { name: "НОРД", avatar: "" });
     const row = el("article", "msg-row");
     if (author.avatar) row.appendChild(img(author.avatar));
     else row.appendChild(el("span", "msg-ava", author.name.slice(0, 1)));
@@ -2013,6 +2038,9 @@
     };
     CONTACTS.forEach((person) => {
       const row = el("div", "info-row");
+      const photo = img(person.avatar);
+      photo.className = "ava";
+      photo.alt = "";
       const who = el("div", "");
       who.append(el("b", "", person.name), el("div", "meta", `${person.dept} · ${person.email}`), el("div", "meta", phones[person.email] || ""));
       const write = el("button", "btn ghost", "Написать");
@@ -2023,7 +2051,7 @@
         state.chatOpen = id;
         Desk.openApp("messenger");
       });
-      row.append(who, write);
+      row.append(photo, who, write);
       page.appendChild(row);
     });
     return page;
@@ -2662,6 +2690,8 @@
       view.appendChild(el("h3", "", dept));
       CONTACTS.filter((person) => person.dept === dept).forEach((person) => {
         const row = el("div", "info-row");
+        const photo = img(person.avatar);
+        photo.className = "ava";
         const who = el("div", "");
         who.append(el("b", "", person.name), el("div", "meta", person.email));
         const write = el("button", "btn ghost", "Написать");
@@ -2669,7 +2699,7 @@
         write.addEventListener("click", () => {
           beginCompose({ to: [{ name: person.name, email: person.email }] });
         });
-        row.append(who, write);
+        row.append(photo, who, write);
         view.appendChild(row);
       });
     });

@@ -61,10 +61,11 @@
     card.id = "obCard";
     if (step === 0) screenTeaser(card);
     else if (step === 1) screenWho(card);
-    else if (step === 2) screenBoot(card);
-    else if (step === 3) screenPassword(card);
-    else if (step === 4) screenKey(card);
-    else if (step === 5) screenApps(card);
+    else if (step === 2) screenAvatar(card);
+    else if (step === 3) screenBoot(card);
+    else if (step === 4) screenPassword(card);
+    else if (step === 5) screenKey(card);
+    else if (step === 6) screenApps(card);
     else screenRules(card);
     card.appendChild(skipControl());
     root.appendChild(card);
@@ -134,7 +135,7 @@
     card.append(
       el("h1", "", "Компьютер включается"),
       el("p", "", "Это твой рабочий компьютер. Тут почта, мессенджер, файлы и остальные рабочие приложения. Всё как у тебя. Только деньги ненастоящие — это тренажёр."),
-      button("Дальше", () => { step = 3; draw(); })
+      button("Дальше", () => { step = 4; draw(); })
     );
   }
 
@@ -154,7 +155,7 @@
       if (!field.value.trim()) return;
       state.passwordLabel = `взлом: ${passwordLabel}`;
       persist();
-      step = 4;
+      step = 5;
       draw();
     });
     next.disabled = true;
@@ -190,8 +191,45 @@
   function chooseKey(on) {
     state.mfa = on;
     persist();
-    step = 5;
+    step = 6;
     draw();
+  }
+
+  function screenAvatar(card) {
+    card.append(el("p", "ob-kicker", "Как тебя видят"), el("h1", "", "Выбери аватар"), el("p", "", "Эти портреты свободны. Лица коллег уже заняты."));
+    let picked = state.avatar || "";
+    const board = el("div", "face-board");
+    Object.entries(desk.PLAYER_FACES).forEach(([title, files]) => {
+      const group = el("div", "face-group");
+      group.appendChild(el("p", "k", title));
+      const row = el("div", "face-row");
+      files.forEach((src) => {
+        const choice = el("button", picked === src ? "face on" : "face");
+        choice.type = "button";
+        const photo = document.createElement("img");
+        photo.src = src;
+        photo.alt = "";
+        choice.appendChild(photo);
+        choice.addEventListener("click", () => {
+          picked = src;
+          board.querySelectorAll(".face").forEach((node) => node.classList.toggle("on", node === choice));
+          next.disabled = false;
+        });
+        row.appendChild(choice);
+      });
+      group.appendChild(row);
+      board.appendChild(group);
+    });
+    const next = button("Дальше", () => {
+      if (!picked) return;
+      state.avatar = picked;
+      persist();
+      paintWho();
+      step = 3;
+      draw();
+    });
+    next.disabled = !picked;
+    card.append(board, next);
   }
 
   function screenApps(card) {
@@ -217,12 +255,12 @@
       row.append(image, text);
       list.appendChild(row);
     });
-    card.append(list, button("Дальше", () => { step = 6; draw(); }));
+    card.append(list, button("Дальше", () => { step = 7; draw(); }));
   }
 
   function screenRules(card) {
     const photo = document.createElement("img");
-    photo.src = "assets/people/colleague.png";
+    photo.src = "assets/people/woman_1.png";
     photo.alt = "";
     photo.className = "ava";
     const who = el("span", "who-line");
@@ -252,7 +290,7 @@
       desk.toast({
         app: "messenger",
         chat: "misha",
-        icon: "assets/people/misha.png",
+        icon: "assets/people/man_1.png",
         title: "Миша Соколов",
         text: "Глянь почту. Там срочное от директора. Я бы сам не платил, пока реквизиты не сверены."
       });

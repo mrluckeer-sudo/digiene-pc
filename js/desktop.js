@@ -22,13 +22,18 @@ const APPS = [
   { id: "review", title: "Разбор", icon: "assets/icons/icon-security.png", desk: false }
 ];
 
+const PLAYER_FACES = {
+  "Мужские": ["assets/people/man_5.png", "assets/people/man_6.png"],
+  "Женские": ["assets/people/woman_4.png", "assets/people/woman_5.png", "assets/people/woman_6.png"]
+};
+
 const PEOPLE = {
-  misha: { name: "Миша Соколов", role: "Продажи", city: "Москва", avatar: "assets/people/misha.png" },
-  director: { name: "Ирина Лебедева", role: "Генеральный директор", city: "в пути", avatar: "assets/people/director.png" },
-  assistant: { name: "Павел Орлов", role: "Ассистент директора", city: "Москва", avatar: "assets/people/assistant.png" },
-  colleague: { name: "Марина Котова", role: "Проектный офис", city: "Казань", avatar: "assets/people/colleague.png" },
-  it: { name: "Сергей Плотников", role: "IT", city: "Москва", avatar: "assets/people/it.png" },
-  hr: { name: "Ольга Репина", role: "Кадры", city: "Москва", avatar: "assets/people/hr.png" }
+  misha: { name: "Миша Соколов", role: "Продажи", city: "Москва", avatar: "assets/people/man_1.png" },
+  director: { name: "Ирина Лебедева", role: "Генеральный директор", city: "в пути", avatar: "assets/people/woman_2.png" },
+  assistant: { name: "Павел Орлов", role: "Ассистент директора", city: "Москва", avatar: "assets/people/man_3.png" },
+  colleague: { name: "Марина Котова", role: "Проектный офис", city: "Казань", avatar: "assets/people/woman_1.png" },
+  it: { name: "Сергей Плотников", role: "IT", city: "Москва", avatar: "assets/people/man_4.png" },
+  hr: { name: "Ольга Репина", role: "Кадры", city: "Москва", avatar: "assets/people/woman_3.png" }
 };
 
 const MAILS = [
@@ -93,6 +98,7 @@ let portalCard = "check";
 function fresh() {
   return {
     name: "",
+    avatar: "",
     mfa: false,
     mfaReminded: false,
     roles: [],
@@ -202,7 +208,36 @@ function applyIcons() {
 function paintWho() {
   const name = state.name.trim();
   document.getElementById("whoName").textContent = name || "Сотрудник";
-  document.getElementById("whoMark").textContent = (name || "С").slice(0, 1).toUpperCase();
+  const mark = document.getElementById("whoMark");
+  mark.replaceChildren();
+  if (state.avatar) {
+    mark.appendChild(img(state.avatar, ""));
+  } else {
+    mark.textContent = (name || "С").slice(0, 1).toUpperCase();
+  }
+}
+
+function facePicker(onPick) {
+  const board = el("div", "face-board");
+  Object.entries(PLAYER_FACES).forEach(([title, files]) => {
+    const group = el("div", "face-group");
+    group.appendChild(el("p", "k", title));
+    const row = el("div", "face-row");
+    files.forEach((src) => {
+      const choice = el("button", state.avatar === src ? "face on" : "face");
+      choice.type = "button";
+      choice.appendChild(img(src, ""));
+      choice.addEventListener("click", () => {
+        board.querySelectorAll(".face").forEach((node) => node.classList.remove("on"));
+        choice.classList.add("on");
+        onPick(src);
+      });
+      row.appendChild(choice);
+    });
+    group.appendChild(row);
+    board.appendChild(group);
+  });
+  return board;
 }
 
 function tick() {
@@ -686,7 +721,12 @@ function paintSettings(body) {
   const save = el("button", "btn", "Сохранить");
   save.type = "submit";
   const note = el("p", "quiet", "");
-  form.append(input, save);
+  form.append(el("p", "k", "Аватар"), facePicker((src) => {
+    state.avatar = src;
+    persist();
+    paintWho();
+    if (wins.has("messenger")) paint("messenger");
+  }), input, save);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     state.name = input.value.trim();
@@ -795,4 +835,4 @@ function toast(options) {
   window.setTimeout(close, options.ms || 6500);
 }
 
-window.Desk = { state, persist, openApp, paint, paintWho, applyIcons, paintNotes, refreshBadges, addLedger, openPreview, openNote, toast, ROLES };
+window.Desk = { state, persist, openApp, paint, paintWho, applyIcons, paintNotes, refreshBadges, addLedger, openPreview, openNote, toast, ROLES, PLAYER_FACES };
