@@ -276,9 +276,7 @@ function openApp(id, options) {
   }
   const win = el("section", "win");
   win.dataset.app = id;
-  const shift = wins.size;
-  win.style.left = `${88 + shift * 26}px`;
-  win.style.top = `${36 + shift * 22}px`;
+  placeWindow(win, id);
   const bar = el("header", "win-bar");
   bar.appendChild(img(app.icon, ""));
   bar.appendChild(el("strong", "", app.title));
@@ -301,6 +299,31 @@ function openApp(id, options) {
   focusWin(win);
   paint(id);
   if (window.Workplace) window.Workplace.dress(win);
+}
+
+function placeWindow(win, id) {
+  const preferred = {
+    mail: [1180, 860],
+    messenger: [1180, 860],
+    files: [1180, 860],
+    calendar: [1180, 860],
+    portal: [1180, 860],
+    browser: [1040, 780],
+    security: [640, 480],
+    settings: [640, 720],
+    review: [640, 520]
+  };
+  const desk = document.getElementById("desk");
+  const [wantW, wantH] = preferred[id] || [1040, 720];
+  const width = Math.min(wantW, Math.max(520, desk.clientWidth - 28));
+  const height = Math.min(wantH, Math.max(420, desk.clientHeight - 108));
+  const shift = wins.size;
+  const left = Math.max(16, Math.min(108 + shift * 26, desk.clientWidth - width - 12));
+  const top = Math.max(12, Math.min(20 + shift * 18, desk.clientHeight - height - 96));
+  win.style.width = `${width}px`;
+  win.style.height = `${height}px`;
+  win.style.left = `${left}px`;
+  win.style.top = `${top}px`;
 }
 
 function closeWin(id) {
@@ -683,7 +706,19 @@ function paintSettings(body) {
     label.append(input, el("span", "", title));
     roles.appendChild(label);
   });
-  box.append(form, note, el("h2", "", "Твой рабочий день"), roles);
+  const reset = el("button", "btn ghost", "Сбросить прогресс");
+  reset.type = "button";
+  const warn = el("p", "quiet", "Имя, почта, файлы, чаты и оплаты этой вкладки сотрутся. Снова начнётся первый рабочий день.");
+  reset.addEventListener("click", () => {
+    if (reset.dataset.sure !== "1") {
+      reset.dataset.sure = "1";
+      reset.textContent = "Точно сбросить";
+      return;
+    }
+    sessionStorage.removeItem(KEY);
+    location.reload();
+  });
+  box.append(form, note, el("h2", "", "Твой рабочий день"), roles, reset, warn);
   body.appendChild(box);
 }
 
@@ -748,7 +783,10 @@ function toast(options) {
       options.onClick();
       return;
     }
-    if (options.chat) activeChat = options.chat;
+    if (options.chat) {
+      activeChat = options.chat;
+      state.chatOpen = options.chat;
+    }
     if (options.app) openApp(options.app);
   });
   layer.appendChild(node);

@@ -119,7 +119,17 @@
     if (!state.events) state.events = seedEvents();
     if (!state.eventLog) state.eventLog = [];
     if (!state.cal) state.cal = { mode: "week", cursor: dateKey(new Date()), selected: "evt_001", form: null };
+    if (!state.rooms) state.rooms = seedRooms();
+    if (!state.chatOpen) state.chatOpen = "misha";
+    if (!state.seen) state.seen = { "c-general": 0, "c-sales": 1, "c-projects": 1, "c-it": 1, "c-hr": 1, misha: 0, director: 1, assistant: 1, colleague: 1, it: 1, hr: 1 };
+    if (!state.hiddenMsgs) state.hiddenMsgs = [];
+    if (!state.chatDrafts) state.chatDrafts = {};
+    if (!state.requests) state.requests = [{ id: "req1", kind: "Отпуск", detail: "2–6 декабря", status: "Согласовано" }];
+    if (!state.tickets) state.tickets = [{ id: "t1", title: "Не печатает договор", who: "Марина Котова", status: "В работе" }];
+    if (!state.accessReqs) state.accessReqs = [];
+    if (!state.softReqs) state.softReqs = [];
     watchReminders();
+    wrapBadges();
     state.browse.cols = (state.browse.cols || []).filter((id) => state.nodes[id] && state.nodes[id].type !== "file");
     if (!state.browse.cols.length) state.browse.cols = ["docs"];
     renderDesk();
@@ -574,12 +584,6 @@
   }
 
   function paintCalendar(body) {
-    const win = body.closest(".win");
-    if (win && !win.dataset.calendar) {
-      win.dataset.calendar = "1";
-      win.style.width = "min(1100px, calc(100vw - 40px))";
-      win.style.height = "min(720px, calc(100vh - 100px))";
-    }
     const shell = el("div", "cal");
     shell.append(calendarSide(), calendarMain(), calendarDetail());
     body.appendChild(shell);
@@ -959,6 +963,411 @@
     form.reminder = box.querySelector("select").value;
   }
 
+  const CHANNELS = [
+    { id: "c-general", title: "общий", topic: "Новости компании, без рабочих файлов" },
+    { id: "c-sales", title: "продажи", topic: "Сделки и счета клиентов" },
+    { id: "c-projects", title: "проектный-офис", topic: "Планёрки и сроки" },
+    { id: "c-it", title: "it", topic: "Доступ, обновления, сбои" },
+    { id: "c-hr", title: "кадры", topic: "Отпуска и данные сотрудников" }
+  ];
+
+  const DM_PEOPLE = {
+    misha: { name: "Миша Соколов", role: "Продажи", city: "Москва", avatar: "assets/people/misha.png" },
+    director: { name: "Ирина Лебедева", role: "Генеральный директор", city: "в пути", avatar: "assets/people/director.png" },
+    assistant: { name: "Павел Орлов", role: "Ассистент директора", city: "Москва", avatar: "assets/people/assistant.png" },
+    colleague: { name: "Марина Котова", role: "Проектный офис", city: "Казань", avatar: "assets/people/colleague.png" },
+    it: { name: "Сергей Плотников", role: "IT", city: "Москва", avatar: "assets/people/it.png" },
+    hr: { name: "Ольга Репина", role: "Кадры", city: "Москва", avatar: "assets/people/hr.png" },
+    security: { name: "Кирилл Антонов", role: "Информационная безопасность", city: "Москва", avatar: "" }
+  };
+
+  const DM_EMAIL = {
+    "i.lebedeva@nord.example": "director",
+    "p.orlov@nord.example": "assistant",
+    "m.sokolov@nord.example": "misha",
+    "m.kotova@nord.example": "colleague",
+    "s.plotnikov@nord.example": "it",
+    "o.repina@nord.example": "hr",
+    "k.antonov@nord.example": "security"
+  };
+
+  function seedRooms() {
+    return {
+      "c-general": [{ id: "g1", who: "hr", text: "Добро пожаловать в НОРД. Вопросы по доступу пишите в #it.", at: "09:10" }],
+      "c-sales": [{ id: "s1", who: "misha", text: "Если по «Северному контуру» придёт счёт, сверяйте его на портале, не в чате.", at: "09:40" }],
+      "c-projects": [{ id: "p1", who: "colleague", text: "Планёрка в 10:00, переговорная 3. Повестка лежит в мероприятиях на портале.", at: "09:20" }],
+      "c-it": [{ id: "i1", who: "it", text: "Обновление рабочего места ставим из портала. Файл из письма не запускаем.", at: "18:05" }],
+      "c-hr": [{ id: "h1", who: "hr", text: "Заявление на отпуск подаётся на портале. В чат достаточно написать даты.", at: "11:00" }]
+    };
+  }
+
+  function dmSeed(id) {
+    const lines = {
+      misha: [{ id: "dm-misha", who: "misha", text: "Глянь почту. Там срочное от директора. Я бы сам не платил, пока реквизиты не сверены.", at: "09:05" }],
+      director: [{ id: "dm-dir", who: "director", text: "На связи буду урывками. Если что — пиши Павлу.", at: "08:40" }],
+      assistant: [{ id: "dm-as", who: "assistant", text: "Директор просила не беспокоить её в полёте. Если письмо про оплату — пришлите тему, сверю по своим каналам.", at: "09:12" }],
+      colleague: [{ id: "dm-col", who: "colleague", text: "Я на планёрке в 10:00. Если что-то срочное — лучше своими словами, без ссылок.", at: "09:30" }],
+      it: [{ id: "dm-it", who: "it", text: "Обновление ставим с портала. Вложение «от IT» из почты можно не открывать.", at: "18:06" }],
+      hr: [{ id: "dm-hr", who: "hr", text: "Карту для зарплаты подтверждаем только в кабинете на портале. Форма из письма не нужна.", at: "11:20" }]
+    };
+    return lines[id] || [];
+  }
+
+  function isChannel(id) {
+    return String(id || "").startsWith("c-");
+  }
+
+  function chatLines(id) {
+    const seed = isChannel(id) ? (state.rooms[id] || []) : dmSeed(id);
+    const extra = isChannel(id) ? [] : (state.chat[id] || []);
+    const roomExtra = isChannel(id) ? (state.chat[id] || []) : [];
+    return seed.concat(roomExtra, extra).filter((line) => line && !state.hiddenMsgs.includes(line.id));
+  }
+
+  function unreadCountFor(id) {
+    return Math.max(0, chatLines(id).length - (state.seen[id] || 0));
+  }
+
+  function unreadTotal() {
+    return CHANNELS.reduce((sum, channel) => sum + unreadCountFor(channel.id), 0)
+      + Object.keys(DM_PEOPLE).reduce((sum, id) => sum + unreadCountFor(id), 0);
+  }
+
+  function wrapBadges() {
+    if (Desk.refreshBadges && !Desk.refreshBadges.wrapped) {
+      const previous = Desk.refreshBadges;
+      const wrapped = () => {
+        previous();
+        paintMsgBadge();
+      };
+      wrapped.wrapped = true;
+      Desk.refreshBadges = wrapped;
+    }
+    paintMsgBadge();
+  }
+
+  function paintMsgBadge() {
+    const icon = document.querySelector('.dicon[data-app="messenger"] .glyph');
+    if (!icon) return;
+    let badge = document.getElementById("msgBadge");
+    if (!badge) {
+      badge = el("i", "badge");
+      badge.id = "msgBadge";
+      icon.appendChild(badge);
+    }
+    const count = unreadTotal();
+    badge.hidden = count === 0;
+    badge.textContent = String(count);
+  }
+
+  function chatDraft(id) {
+    if (!state.chatDrafts[id]) state.chatDrafts[id] = { text: "", files: [] };
+    return state.chatDrafts[id];
+  }
+
+  function hasDraft(id) {
+    const draft = state.chatDrafts[id];
+    return !!(draft && (String(draft.text || "").trim() || (draft.files || []).length));
+  }
+
+  function saveChatDraft(id, text) {
+    const draft = chatDraft(id);
+    draft.text = text;
+    if (!String(draft.text || "").trim() && !(draft.files || []).length) delete state.chatDrafts[id];
+    persist();
+  }
+
+  function captureComposer() {
+    const area = document.querySelector(".slack-compose textarea");
+    if (area && state.chatOpen) saveChatDraft(state.chatOpen, area.value);
+  }
+
+  function openChat(id) {
+    if (id !== state.chatOpen) captureComposer();
+    state.chatOpen = id;
+    state.seen[id] = chatLines(id).length;
+    state.chatMenu = null;
+    persist();
+    Desk.paint("messenger");
+    paintMsgBadge();
+  }
+
+  function postChat(id, line) {
+    const pack = state.chat[id] || (state.chat[id] = []);
+    pack.push(Object.assign({ id: uid("msg"), at: new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" }).format(new Date()) }, line));
+    if (!isChannel(id)) {
+      pack.push({ id: uid("msg"), who: id, text: dmReply(id, line.text), at: "сейчас" });
+    }
+    state.seen[id] = chatLines(id).length;
+    persist();
+    paintMsgBadge();
+  }
+
+  function dmReply(id, text) {
+    const money = /оплат|счет|счёт|реквизит|директор/i.test(text || "");
+    if (id === "misha") return money ? "Я бы не платил из письма. Реквизиты должны совпасть с договором на портале." : "Почту открыл? Письмо от директора сверху.";
+    if (id === "assistant") return "Тему увидел. Пока директор в полёте, сверю сам и напишу, её ли это просьба.";
+    if (id === "it") return "Если файл пришёл письмом и называется обновлением — не запускай. Хватит портала.";
+    if (id === "hr") return "Номер карты в письме лучше не оставлять. Нужная форма уже есть на портале.";
+    if (id === "director") return "Сообщение дойдёт, когда появится сеть. С оплатой лучше дождаться сверки.";
+    if (id === "security") return "Опишите, что произошло: от кого сообщение и что в нём просили. Пароль и код подтверждения сюда не пишите.";
+    return "Если это была ссылка, лучше перескажи своими словами. Я открою сама, только когда пойму, от кого она.";
+  }
+
+  let focusComposer = false;
+
+  function paintMessenger(body) {
+    focusComposer = !!state.chatFocus;
+    state.chatFocus = false;
+    state.seen[state.chatOpen] = chatLines(state.chatOpen).length;
+    persist();
+    const shell = el("div", "slack");
+    shell.append(chatSide(), chatMain(), chatAbout());
+    body.appendChild(shell);
+    const log = shell.querySelector(".slack-log");
+    if (log) log.scrollTop = log.scrollHeight;
+    paintMsgBadge();
+  }
+
+  function chatSide() {
+    const side = el("aside", "slack-side");
+    side.appendChild(el("header", "", "НОРД"));
+    const search = document.createElement("input");
+    search.placeholder = "Найти канал или человека";
+    search.value = state.chatQuery || "";
+    search.addEventListener("input", () => {
+      captureComposer();
+      state.chatQuery = search.value;
+      Desk.paint("messenger");
+      const again = document.querySelector(".slack-side input");
+      if (again) {
+        again.focus();
+        again.setSelectionRange(again.value.length, again.value.length);
+      }
+    });
+    side.appendChild(search);
+    const scroll = el("div", "slack-scroll");
+    const query = (state.chatQuery || "").trim().toLowerCase();
+    scroll.appendChild(el("p", "slack-label", "Каналы"));
+    CHANNELS.filter((channel) => !query || channel.title.includes(query)).forEach((channel) => {
+      scroll.appendChild(chatButton(channel.id, `# ${channel.title}`, null, unreadCountFor(channel.id)));
+    });
+    scroll.appendChild(el("p", "slack-label", "Личные"));
+    Object.keys(DM_PEOPLE).filter((id) => {
+      const person = DM_PEOPLE[id];
+      return !query || person.name.toLowerCase().includes(query) || person.role.toLowerCase().includes(query);
+    }).forEach((id) => {
+      scroll.appendChild(chatButton(id, DM_PEOPLE[id].name, DM_PEOPLE[id].avatar, unreadCountFor(id)));
+    });
+    if (query) {
+      CONTACTS.filter((person) => person.name.toLowerCase().includes(query) || person.email.includes(query)).forEach((person) => {
+        const id = DM_EMAIL[person.email];
+        if (!id || scroll.querySelector(`[data-chat="${id}"]`)) return;
+        scroll.appendChild(chatButton(id, person.name, "", 0));
+      });
+    }
+    side.appendChild(scroll);
+    return side;
+  }
+
+  function chatButton(id, title, avatar, unread) {
+    const button = el("button", `slack-item${id === state.chatOpen ? " on" : ""}${unread ? " unread" : ""}`);
+    button.type = "button";
+    button.dataset.chat = id;
+    if (avatar) {
+      const photo = img(avatar);
+      photo.alt = "";
+      button.appendChild(photo);
+    } else if (!String(id).startsWith("c-")) {
+      button.appendChild(el("span", "msg-ava", title.slice(0, 1)));
+    }
+    button.appendChild(el("span", "slack-name", title));
+    const marks = el("span", "slack-marks");
+    if (hasDraft(id)) marks.appendChild(draftPencil());
+    if (unread) marks.appendChild(el("i", "dot"));
+    if (marks.childNodes.length) button.appendChild(marks);
+    button.addEventListener("click", () => openChat(id));
+    return button;
+  }
+
+  function draftPencil() {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("class", "draft-mark");
+    svg.setAttribute("aria-label", "Черновик");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("fill", "currentColor");
+    path.setAttribute("d", "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z");
+    svg.appendChild(path);
+    return svg;
+  }
+
+  function fileChip(fileId, onRemove) {
+    const node = state.nodes[fileId];
+    const chip = el("div", "draft-file");
+    chip.append(img(fileArt(node || { type: "file" })), el("span", "", node ? node.name : "Файл"));
+    if (onRemove) {
+      const remove = el("button", "draft-x", "×");
+      remove.type = "button";
+      remove.setAttribute("aria-label", "Убрать файл");
+      remove.addEventListener("click", onRemove);
+      chip.appendChild(remove);
+    }
+    return chip;
+  }
+
+  function chatMain() {
+    const id = state.chatOpen;
+    const channel = CHANNELS.find((item) => item.id === id);
+    const person = DM_PEOPLE[id];
+    const draft = state.chatDrafts[id] || { text: "", files: [] };
+    const main = el("div", "slack-main");
+    const head = el("div", "slack-head");
+    head.append(el("b", "", channel ? `# ${channel.title}` : person.name), el("p", "quiet", channel ? channel.topic : person.role));
+    const log = el("div", "slack-log");
+    chatLines(id).forEach((line) => log.appendChild(messageRow(id, line)));
+    const form = el("form", "slack-compose");
+    if (draft.files.length) {
+      const files = el("div", "draft-files");
+      draft.files.forEach((fileId) => {
+        files.appendChild(fileChip(fileId, () => {
+          draft.files = draft.files.filter((item) => item !== fileId);
+          saveChatDraft(id, area.value);
+          Desk.paint("messenger");
+        }));
+      });
+      form.appendChild(files);
+    }
+    const row = el("div", "compose-row");
+    const attach = el("button", "btn ghost", "Файл");
+    attach.type = "button";
+    const area = document.createElement("textarea");
+    area.rows = 1;
+    area.placeholder = channel ? `Написать в #${channel.title}` : `Сообщение для ${person.name.split(" ")[0]}`;
+    area.value = draft.text || "";
+    attach.addEventListener("click", () => {
+      saveChatDraft(id, area.value);
+      state.pick = { kind: "chat", chat: id };
+      state.browse.cols = ["disk", "docs"];
+      state.browse.sel = null;
+      Desk.openApp("files");
+    });
+    area.addEventListener("input", () => saveChatDraft(id, area.value));
+    area.addEventListener("blur", () => saveChatDraft(id, area.value));
+    area.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+    const send = el("button", "btn", "Отправить");
+    send.type = "submit";
+    row.append(attach, area, send);
+    form.appendChild(row);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const text = area.value.trim();
+      const files = (chatDraft(id).files || []).slice();
+      if (!text && !files.length) return;
+      postChat(id, { who: "you", text, files });
+      area.value = "";
+      delete state.chatDrafts[id];
+      persist();
+      Desk.paint("messenger");
+    });
+    main.append(head, log, form);
+    if (focusComposer) window.setTimeout(() => area.focus(), 0);
+    return main;
+  }
+
+  function messageRow(roomId, line) {
+    const author = line.who === "you" ? { name: state.name.trim() || "Вы", avatar: "" } : (DM_PEOPLE[line.who] || { name: "НОРД", avatar: "" });
+    const row = el("article", "msg-row");
+    if (author.avatar) row.appendChild(img(author.avatar));
+    else row.appendChild(el("span", "msg-ava", author.name.slice(0, 1)));
+    const body = el("div", "");
+    const head = document.createElement("header");
+    head.append(el("b", "", author.name), el("span", "", line.at || ""));
+    body.appendChild(head);
+    if (line.text) {
+      const text = el("p", "");
+      text.appendChild(linkedChat(line.text));
+      body.appendChild(text);
+    }
+    const files = line.files || (line.file ? [line.file] : []);
+    if (files.length) {
+      const row = el("div", "msg-files");
+      files.forEach((fileId) => row.appendChild(fileChip(fileId)));
+      body.appendChild(row);
+    }
+    const more = el("button", "msg-more", "⋯");
+    more.type = "button";
+    more.addEventListener("click", (event) => {
+      event.stopPropagation();
+      state.chatMenu = state.chatMenu === line.id ? null : line.id;
+      Desk.paint("messenger");
+    });
+    row.append(body, more);
+    if (state.chatMenu === line.id) {
+      const menu = el("div", "msg-menu");
+      const copy = el("button", "", "Копировать");
+      const remove = el("button", "", "Удалить у себя");
+      copy.type = "button";
+      remove.type = "button";
+      copy.addEventListener("click", () => {
+        if (navigator.clipboard) navigator.clipboard.writeText(line.text || "").catch(() => {});
+        state.chatMenu = null;
+        Desk.paint("messenger");
+      });
+      remove.addEventListener("click", () => {
+        state.hiddenMsgs.push(line.id);
+        state.chatMenu = null;
+        state.seen[roomId] = chatLines(roomId).length;
+        persist();
+        Desk.paint("messenger");
+      });
+      menu.append(copy, remove);
+      row.appendChild(menu);
+    }
+    return row;
+  }
+
+  function linkedChat(text) {
+    const frag = document.createDocumentFragment();
+    String(text).split(/(https?:\/\/[^\s]+)/).forEach((part) => {
+      if (!/^https?:/.test(part)) {
+        frag.appendChild(document.createTextNode(part));
+        return;
+      }
+      const link = el("button", "cal-link", part);
+      link.type = "button";
+      link.addEventListener("click", () => {
+        state.browserUrl = part;
+        Desk.openApp("browser");
+      });
+      frag.appendChild(link);
+    });
+    return frag;
+  }
+
+  function chatAbout() {
+    const aside = el("aside", "slack-about");
+    const id = state.chatOpen;
+    const channel = CHANNELS.find((item) => item.id === id);
+    if (channel) {
+      aside.append(el("h2", "", "О канале"), el("p", "", channel.topic), el("p", "k", "Участники"));
+      const members = { "c-general": Object.keys(DM_PEOPLE), "c-sales": ["misha"], "c-projects": ["colleague", "assistant"], "c-it": ["it"], "c-hr": ["hr"] }[id] || [];
+      members.forEach((member) => aside.appendChild(el("p", "", DM_PEOPLE[member].name)));
+      aside.appendChild(el("p", "quiet", `${members.length + 1} участника, включая вас`));
+      return aside;
+    }
+    const person = DM_PEOPLE[id];
+    aside.append(el("h2", "", person.name), el("p", "", person.role), el("p", "k", "Город"), el("p", "", person.city));
+    const contact = CONTACTS.find((item) => DM_EMAIL[item.email] === id);
+    if (contact) aside.append(el("p", "k", "Почта"), el("p", "", contact.email));
+    return aside;
+  }
+
   function paint(id, body) {
     if (id === "files") {
       paintFiles(body);
@@ -976,6 +1385,10 @@
       paintCalendar(body);
       return true;
     }
+    if (id === "messenger") {
+      paintMessenger(body);
+      return true;
+    }
     return false;
   }
 
@@ -985,12 +1398,6 @@
   }
 
   function paintFiles(body) {
-    const win = body.closest(".win");
-    if (win && !win.dataset.finder) {
-      win.dataset.finder = "1";
-      win.style.width = "min(1040px, calc(100vw - 40px))";
-      win.style.height = "min(680px, calc(100vh - 100px))";
-    }
     const shell = el("div", "finder");
     shell.appendChild(finderSide());
     const main = el("div", "finder-main");
@@ -1055,15 +1462,20 @@
       if (source && /УЧ-1042/i.test(source.name)) save.dataset.coach = "pay-save";
       save.addEventListener("click", () => {
         const saved = state.nodes[state.pick.nodeId];
-        copyNode(state.pick.nodeId, activeFolder());
-        state.pick = null;
-        if (saved && /УЧ-1042/i.test(saved.name)) coachDone("download");
-        Desk.paint("files");
+        const folder = activeFolder();
+        const nodeId = state.pick.nodeId;
+        transfer(saved ? `Сохранение «${saved.name}»` : "Сохранение файла", () => {
+          copyNode(nodeId, folder);
+          state.pick = null;
+          if (saved && /УЧ-1042/i.test(saved.name)) coachDone("download");
+          Desk.paint("files");
+        });
       });
       bar.appendChild(save);
     }
     if (state.pick && state.pick.kind === "attach") bar.appendChild(el("span", "hint", "Выберите файл — он приложится к письму"));
     if (state.pick && state.pick.kind === "pay") bar.appendChild(el("span", "hint", "Выберите файл счёта на диске"));
+    if (state.pick && state.pick.kind === "chat") bar.appendChild(el("span", "hint", "Выберите файл — он добавится к сообщению"));
     return bar;
   }
 
@@ -1084,7 +1496,7 @@
         if (state.pick && state.pick.kind === "pay" && /УЧ-1042/i.test(node.name)) row.dataset.coach = "pay-file";
         row.addEventListener("click", () => chooseNode(node, index));
         row.addEventListener("dblclick", () => {
-          if (node.type === "file" && !(state.pick && (state.pick.kind === "attach" || state.pick.kind === "pay"))) openNode(node);
+          if (node.type === "file" && !(state.pick && (state.pick.kind === "attach" || state.pick.kind === "pay" || state.pick.kind === "chat"))) openNode(node);
         });
         row.addEventListener("contextmenu", (event) => {
           event.preventDefault();
@@ -1123,17 +1535,53 @@
     return pane;
   }
 
+  let transferring = false;
+  function transfer(title, done) {
+    if (transferring) return;
+    transferring = true;
+    const layer = el("div", "transfer");
+    layer.setAttribute("role", "status");
+    const card = el("div", "transfer-card");
+    card.append(el("span", "spin"), el("p", "", title));
+    layer.appendChild(card);
+    document.getElementById("desk").appendChild(layer);
+    window.setTimeout(() => {
+      layer.classList.add("out");
+      window.setTimeout(() => {
+        layer.remove();
+        transferring = false;
+        done();
+      }, 180);
+    }, 900);
+  }
+
   function chooseNode(node, colIndex) {
     if (state.pick && state.pick.kind === "attach" && node.type === "file") {
-      addAttachment(node.id);
+      transfer(`Загрузка «${node.name}»`, () => addAttachment(node.id));
+      return;
+    }
+    if (state.pick && state.pick.kind === "chat" && node.type === "file") {
+      const chatId = state.pick.chat || state.chatOpen;
+      const fileId = node.id;
+      transfer(`Загрузка «${node.name}»`, () => {
+        const draft = chatDraft(chatId);
+        if (!draft.files.includes(fileId)) draft.files.push(fileId);
+        state.pick = null;
+        state.chatOpen = chatId;
+        state.chatFocus = true;
+        persist();
+        Desk.openApp("messenger");
+      });
       return;
     }
     if (state.pick && state.pick.kind === "pay" && node.type === "file") {
-      state.payFile = node.id;
-      state.pick = null;
-      state.portalSection = "pay";
-      coachDone("upload");
-      Desk.openApp("portal");
+      transfer(`Загрузка «${node.name}»`, () => {
+        state.payFile = node.id;
+        state.pick = null;
+        state.portalSection = "pay";
+        coachDone("upload");
+        Desk.openApp("portal");
+      });
       return;
     }
     state.browse.cols = state.browse.cols.slice(0, colIndex + 1);
@@ -1264,11 +1712,13 @@
       save.type = "button";
       if (/УЧ-1042/i.test(file.name) || id === "invoice") save.dataset.coach = "pay-download";
       save.addEventListener("click", () => {
-        state.pick = { kind: "save", nodeId: id };
-        state.browse.cols = ["downloads"];
-        state.browse.sel = null;
-        state.cwd = "downloads";
-        Desk.openApp("files");
+        transfer(`Скачивание «${file.name}»`, () => {
+          state.pick = { kind: "save", nodeId: id };
+          state.browse.cols = ["downloads"];
+          state.browse.sel = null;
+          state.cwd = "downloads";
+          Desk.openApp("files");
+        });
       });
       row.append(open, save);
       view.appendChild(row);
@@ -1403,29 +1853,325 @@
     tip.style.top = `${top}px`;
   }
 
-  function paintPortal(body) {
-    const win = body.closest(".win");
-    if (win && !win.dataset.portal) {
-      win.dataset.portal = "1";
-      win.style.width = "min(920px, calc(100vw - 40px))";
-      win.style.height = "min(640px, calc(100vh - 110px))";
-    }
-    const shell = el("div", "portal");
-    const nav = document.createElement("nav");
-    [["pay", "Оплата контрагентам"], ["docs", "Договоры"], ["updates", "Обновления"], ["hr", "Кадры"]].forEach(([id, title]) => {
-      const button = el("button", state.portalSection === id ? "on" : "", title);
-      button.type = "button";
-      button.addEventListener("click", () => {
-        state.portalSection = id;
+  function portalGroups() {
+    return [
+      ["Общее", [["news", "Новости"], ["digest", "Рассылка"], ["people", "Справочник"], ["events", "Мероприятия"], ["requests", "Заявления"]]],
+      ["Финансы", [["pay", "Оплата контрагентам"], ["registry", "Реестр счетов"], ["history", "История платежей"], ["overdue", "Просрочка"], ["docs", "Договоры"]]],
+      ["IT", [["access", "Заявки на доступ"], ["software", "Установка ПО"], ["tickets", "Тикеты"], ["incidents", "Инциденты"], ["updates", "Обновления"]]],
+      ["Кадры", [["hr", "Кабинет сотрудника"]]]
+    ];
+  }
+
+  function newsPage() {
+    const page = el("div", "");
+    page.append(el("h2", "", "Новости"), el("p", "quiet", "Объявления компании. Рабочие файлы здесь не раздают."));
+    [
+      ["20 ноября", "Срок сверки счетов", "Счета, которые не сверены с договором, сегодня до 16:30 остаются в работе."],
+      ["18 ноября", "Клиент рабочего места 4.2", "Обновление ставится из раздела «Обновления». Письмо с вложением к нему не относится."],
+      ["12 ноября", "Кадровый день", "Заявления на декабрь лучше подать до конца недели."]
+    ].forEach(([date, title, text]) => {
+      const card = el("article", "portal-card");
+      card.append(el("span", "k", date), el("b", "", title), el("p", "", text));
+      page.appendChild(card);
+    });
+    return page;
+  }
+
+  function digestPage() {
+    const page = el("div", "");
+    page.append(el("h2", "", "Рассылка"), el("p", "quiet", "Дайджест за неделю. Это не письмо и не просьба что-то оплатить."));
+    const card = el("article", "portal-card");
+    card.append(
+      el("b", "", "Неделя 17–21 ноября"),
+      el("p", "", "Проектный офис провёл планёрку. Продажи закрыли поставку «Северной линии». IT выложило клиент 4.2."),
+      el("p", "", "На следующей неделе — кадровый день и сверка открытых счетов.")
+    );
+    page.appendChild(card);
+    return page;
+  }
+
+  function peoplePage() {
+    const page = el("div", "");
+    page.append(el("h2", "", "Справочник"), el("p", "quiet", "Телефон и почта сотрудника. Просьбу из письма с этими данными лучше сверить здесь."));
+    const phones = {
+      "i.lebedeva@nord.example": "+7 495 000-10-01",
+      "p.orlov@nord.example": "+7 495 000-10-02",
+      "m.sokolov@nord.example": "+7 495 000-20-14",
+      "m.kotova@nord.example": "+7 843 000-30-08",
+      "s.plotnikov@nord.example": "+7 495 000-40-03",
+      "o.repina@nord.example": "+7 495 000-50-06",
+      "k.antonov@nord.example": "+7 495 000-60-09"
+    };
+    CONTACTS.forEach((person) => {
+      const row = el("div", "info-row");
+      const who = el("div", "");
+      who.append(el("b", "", person.name), el("div", "meta", `${person.dept} · ${person.email}`), el("div", "meta", phones[person.email] || ""));
+      const write = el("button", "btn ghost", "Написать");
+      write.type = "button";
+      write.addEventListener("click", () => {
+        const id = DM_EMAIL[person.email];
+        if (!id) return;
+        state.chatOpen = id;
+        Desk.openApp("messenger");
+      });
+      row.append(who, write);
+      page.appendChild(row);
+    });
+    return page;
+  }
+
+  function eventsPage() {
+    const page = el("div", "");
+    page.append(el("h2", "", "Мероприятия"), el("p", "quiet", "Собрания компании. Личный календарь открывается отдельно."));
+    (state.events || []).forEach((event) => {
+      const row = el("div", "info-row");
+      const text = el("div", "");
+      text.append(el("b", "", event.title), el("div", "meta", `${event.start.replace("T", " ")}${event.isInvite ? " · приглашение" : ""}`));
+      const open = el("button", "btn ghost", "В календарь");
+      open.type = "button";
+      open.addEventListener("click", () => {
+        state.cal.selected = event.id;
+        state.cal.cursor = event.start.slice(0, 10);
+        state.cal.form = null;
+        Desk.openApp("calendar");
+      });
+      row.append(text, open);
+      page.appendChild(row);
+    });
+    return page;
+  }
+
+  function requestsPage() {
+    const page = el("div", "");
+    page.append(el("h2", "", "Заявления"), el("p", "quiet", "Отпуск, командировка, больничный или отгул. Статус виден здесь."));
+    const form = el("form", "portal-form");
+    const kind = document.createElement("select");
+    ["Отпуск", "Командировка", "Больничный", "Отгул"].forEach((title) => {
+      const option = document.createElement("option");
+      option.textContent = title;
+      kind.appendChild(option);
+    });
+    const detail = document.createElement("input");
+    detail.placeholder = "Даты или город";
+    const save = el("button", "btn", "Подать");
+    save.type = "submit";
+    form.append(kind, detail, save);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (!detail.value.trim()) return;
+      state.requests.unshift({ id: uid("req"), kind: kind.value, detail: detail.value.trim(), status: "На рассмотрении" });
+      persist();
+      Desk.paint("portal");
+    });
+    page.appendChild(form);
+    state.requests.forEach((item) => page.appendChild(statusRow(item.kind, item.detail, item.status)));
+    return page;
+  }
+
+  function registryPage() {
+    const page = el("div", "");
+    page.append(el("h2", "", "Реестр счетов"), el("p", "quiet", "Входящие счета и статус согласования. Проведение — в оплате контрагентам."));
+    const paid = (state.payments || []).some((item) => item.doc === "УЧ-1042");
+    page.appendChild(simpleTable(
+      ["Контрагент", "Документ", "Сумма", "Статус"],
+      [
+        ["ООО «Северный контур»", "УЧ-1042", "186 400", paid ? "Проведён" : "Ждёт файл"],
+        ["АО «Балтснаб»", "УЧ-1050", "64 000", "На согласовании"],
+        ["ИП Сорокин", "УЧ-1033", "9 800", "Отклонён"]
+      ]
+    ));
+    return page;
+  }
+
+  function historyPage() {
+    const page = el("div", "");
+    page.append(el("h2", "", "История платежей"));
+    const filter = document.createElement("input");
+    filter.placeholder = "Контрагент, документ или сумма";
+    filter.value = state.payFilter || "";
+    filter.addEventListener("input", () => {
+      state.payFilter = filter.value;
+      Desk.paint("portal");
+      const again = document.querySelector(".portal-page input");
+      if (again) {
+        again.focus();
+        again.setSelectionRange(again.value.length, again.value.length);
+      }
+    });
+    page.appendChild(filter);
+    const query = (state.payFilter || "").trim().toLowerCase();
+    const rows = (state.payments || []).filter((row) => !query || `${row.who} ${row.doc} ${row.sum} ${row.date}`.toLowerCase().includes(query));
+    page.appendChild(simpleTable(["Дата", "Контрагент", "Документ", "Сумма", "Статус"], rows.map((row) => [row.date, row.who, row.doc, row.sum, row.status])));
+    return page;
+  }
+
+  function overduePage() {
+    const page = el("div", "");
+    page.append(el("h2", "", "Просрочка"), el("p", "quiet", "Напоминание о счёте, срок которого уже сегодня."));
+    const paid = (state.payments || []).some((item) => item.doc === "УЧ-1042");
+    if (paid) page.appendChild(el("p", "", "Просроченных счетов нет."));
+    else page.appendChild(statusRow("ООО «Северный контур»", "УЧ-1042 · 186 400 · срок сегодня", "Не проведён"));
+    return page;
+  }
+
+  function docsPage() {
+    const page = el("div", "");
+    page.append(el("h2", "", "Договоры"), contract("ООО «Северный контур»", "Договор 14-С, поставка"), contract("АО «Балтснаб»", "Договор 08-Б"));
+    return page;
+  }
+
+  function accessPage() {
+    const page = el("div", "");
+    page.append(el("h2", "", "Заявки на доступ"), el("p", "quiet", "Запрос на систему. Права появляются после согласования, не по письму."));
+    const form = el("form", "portal-form");
+    const system = document.createElement("input");
+    system.placeholder = "Система, например почта или диск";
+    const why = document.createElement("input");
+    why.placeholder = "Зачем доступ";
+    const save = el("button", "btn", "Отправить");
+    save.type = "submit";
+    form.append(system, why, save);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (!system.value.trim()) return;
+      state.accessReqs.unshift({ id: uid("acc"), system: system.value.trim(), why: why.value.trim(), status: "На согласовании" });
+      persist();
+      Desk.paint("portal");
+    });
+    page.appendChild(form);
+    state.accessReqs.forEach((item) => page.appendChild(statusRow(item.system, item.why || "Без пояснения", item.status)));
+    return page;
+  }
+
+  function softwarePage() {
+    const page = el("div", "");
+    page.append(el("h2", "", "Установка ПО"), el("p", "quiet", "Каталог разрешённых программ. Установщик из письма сюда не входит."));
+    [
+      ["Клиент рабочего места 4.2", "Уже в разделе обновлений"],
+      ["Редактор договоров", "Стоит на рабочих местах продаж"],
+      ["Средство видеосвязи НОРД", "Для планёрок"]
+    ].forEach(([title, note]) => {
+      const row = el("div", "info-row");
+      const text = el("div", "");
+      text.append(el("b", "", title), el("div", "meta", note));
+      const ask = el("button", "btn ghost", state.softReqs.includes(title) ? "Запрошено" : "Запросить");
+      ask.type = "button";
+      ask.disabled = state.softReqs.includes(title);
+      ask.addEventListener("click", () => {
+        state.softReqs.push(title);
+        persist();
         Desk.paint("portal");
       });
-      nav.appendChild(button);
+      row.append(text, ask);
+      page.appendChild(row);
+    });
+    return page;
+  }
+
+  function ticketsPage() {
+    const page = el("div", "");
+    page.append(el("h2", "", "Тикеты"), el("p", "quiet", "Обращение в поддержку и его статус."));
+    const form = el("form", "portal-form");
+    const title = document.createElement("input");
+    title.placeholder = "Что случилось";
+    const save = el("button", "btn", "Создать");
+    save.type = "submit";
+    form.append(title, save);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (!title.value.trim()) return;
+      state.tickets.unshift({ id: uid("tkt"), title: title.value.trim(), who: state.name.trim() || "Вы", status: "Новый" });
+      persist();
+      Desk.paint("portal");
+    });
+    page.appendChild(form);
+    state.tickets.forEach((item) => page.appendChild(statusRow(item.title, item.who, item.status)));
+    return page;
+  }
+
+  function incidentsPage() {
+    const page = el("div", "");
+    page.append(el("h2", "", "Журнал инцидентов"), el("p", "quiet", "Записи IT. Сюда не добавляют пароли и коды."));
+    page.appendChild(simpleTable(
+      ["Дата", "Событие", "Статус"],
+      [
+        ["18 ноября", "Почта не принимала вложения час", "Закрыт"],
+        ["4 ноября", "Краткий сбой входа на портал", "Закрыт"]
+      ]
+    ));
+    return page;
+  }
+
+  function updatesPage() {
+    const page = el("div", "");
+    page.append(el("h2", "", "Обновления"), el("p", "", "Клиент рабочего места 4.2 от 18 ноября. Его ставят из этого раздела."));
+    return page;
+  }
+
+  function hrPage() {
+    const page = el("div", "");
+    page.append(el("h2", "", "Кабинет сотрудника"), el("p", "", "Карта для зарплаты подтверждается здесь. Текущая заканчивается на 4412."));
+    return page;
+  }
+
+  function statusRow(title, detail, status) {
+    const row = el("div", "info-row");
+    const text = el("div", "");
+    text.append(el("b", "", title), el("div", "meta", detail));
+    row.append(text, el("b", "", status));
+    return row;
+  }
+
+  function simpleTable(headings, rows) {
+    const table = document.createElement("table");
+    table.className = "pay-table";
+    const head = document.createElement("tr");
+    headings.forEach((title) => head.appendChild(el("th", "", title)));
+    table.appendChild(head);
+    rows.forEach((row) => {
+      const line = document.createElement("tr");
+      row.forEach((value) => line.appendChild(el("td", "", value)));
+      table.appendChild(line);
+    });
+    return table;
+  }
+
+  function paintPortal(body) {
+    const shell = el("div", "portal");
+    const nav = document.createElement("nav");
+    const yours = (state.roles || []).includes("finance") ? "Финансы" : "Общее";
+    portalGroups().forEach(([group, items]) => {
+      nav.appendChild(el("p", "group", group === yours ? `${group} · ваш` : group));
+      items.forEach(([id, title]) => {
+        const button = el("button", state.portalSection === id ? "on" : "", title);
+        button.type = "button";
+        button.addEventListener("click", () => {
+          state.portalSection = id;
+          Desk.paint("portal");
+        });
+        nav.appendChild(button);
+      });
     });
     const page = el("div", "portal-page");
-    if (state.portalSection === "docs") page.append(el("h2", "", "Договоры"), contract("ООО «Северный контур»", "Договор 14-С, поставка"), contract("АО «Балтснаб»", "Договор 08-Б"));
-    else if (state.portalSection === "updates") page.append(el("h2", "", "Обновления"), el("p", "", "Клиент рабочего места 4.2 от 18 ноября. Его ставят из этого раздела."));
-    else if (state.portalSection === "hr") page.append(el("h2", "", "Кадры"), el("p", "", "Карта для зарплаты подтверждается здесь. Текущая заканчивается на 4412."));
-    else page.appendChild(payPage());
+    const pages = {
+      news: newsPage,
+      digest: digestPage,
+      people: peoplePage,
+      events: eventsPage,
+      requests: requestsPage,
+      pay: payPage,
+      registry: registryPage,
+      history: historyPage,
+      overdue: overduePage,
+      docs: docsPage,
+      access: accessPage,
+      software: softwarePage,
+      tickets: ticketsPage,
+      incidents: incidentsPage,
+      updates: updatesPage,
+      hr: hrPage
+    };
+    page.appendChild((pages[state.portalSection] || payPage)());
     shell.append(nav, page);
     body.appendChild(shell);
     if (coachStep() === "portal") coachDone("portal");
