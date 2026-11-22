@@ -17,6 +17,7 @@ const APPS = [
   { id: "calendar", title: "Календарь", icon: "assets/icons/icon-calendar.png" },
   { id: "security", title: "Безопасность", icon: "assets/icons/icon-security.png" },
   { id: "portal", title: "Портал", icon: "assets/icons/icon-portal.png" },
+  { id: "vpn", title: "VPN", icon: "assets/icons/icon-vpn.svg" },
   { id: "settings", title: "Настройки", icon: "assets/icons/icon-settings.png", desk: false },
   { id: "review", title: "Разбор", icon: "assets/icons/icon-security.png", desk: false }
 ];
@@ -310,6 +311,7 @@ function placeWindow(win, id) {
     portal: [1180, 860],
     browser: [1040, 780],
     security: [640, 480],
+    vpn: [560, 720],
     settings: [640, 720],
     review: [640, 520]
   };

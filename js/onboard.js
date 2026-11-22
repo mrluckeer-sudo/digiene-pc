@@ -4,7 +4,7 @@
 
   const { state, persist, paintWho, applyIcons, paintNotes, refreshBadges, ROLES } = desk;
   const root = document.getElementById("onboard");
-  const installIds = ["mail", "messenger", "browser", "files", "calendar", "portal"];
+  const installIds = ["mail", "messenger", "browser", "files", "calendar", "portal", "vpn"];
   let step = 0;
   let hintTimer = 0;
   let passwordLabel = "";
@@ -15,7 +15,8 @@
     ["browser", "Браузер", "assets/icons/icon-browser.png"],
     ["files", "Файлы", "assets/icons/icon-files.png"],
     ["calendar", "Календарь", "assets/icons/icon-calendar.png"],
-    ["portal", "Портал", "assets/icons/icon-portal.png"]
+    ["portal", "Портал", "assets/icons/icon-portal.png"],
+    ["vpn", "VPN", "assets/icons/icon-vpn.svg"]
   ];
 
   root.hidden = false;
@@ -202,7 +203,8 @@
       browser: ["Открывает рабочие сайты.", "Через него смотрят внутренний портал."],
       files: ["Документы и папки на компьютере.", "Здесь лежат счёт, форма кадров и регламент."],
       calendar: ["Встречи и сроки дня.", "Показывает, если по рабочему письму уже есть действие."],
-      portal: ["Договоры, обновления и оплата контрагентам.", "Счёт из письма проводят здесь: файл скачивают и загружают с диска."]
+      portal: ["Договоры, обновления и оплата контрагентам.", "Счёт из письма проводят здесь: файл скачивают и загружают с диска."],
+      vpn: ["Подключение к сети компании по коду от IT.", "Код вставляют в клиент и включают доступ. Пока сеть ни на что не влияет."]
     };
     apps.forEach(([id, title, icon]) => {
       const row = el("div", "app-blurb");

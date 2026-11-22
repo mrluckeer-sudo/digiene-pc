@@ -128,6 +128,10 @@
     if (!state.tickets) state.tickets = [{ id: "t1", title: "Не печатает договор", who: "Марина Котова", status: "В работе" }];
     if (!state.accessReqs) state.accessReqs = [];
     if (!state.softReqs) state.softReqs = [];
+    if (!state.vpn) state.vpn = { code: "", on: false };
+    state.vpn.phase = "";
+    if (!String(state.vpn.code || "").trim()) state.vpn.on = false;
+    if (Array.isArray(state.installed) && !state.installed.includes("vpn")) state.installed.push("vpn");
     watchReminders();
     wrapBadges();
     state.browse.cols = (state.browse.cols || []).filter((id) => state.nodes[id] && state.nodes[id].type !== "file");
@@ -140,6 +144,9 @@
       if (!event.target.closest("#menu")) closeMenu();
     });
     if (coachStep()) watchCoach();
+    const vpnStat = document.getElementById("vpnStat");
+    if (vpnStat) vpnStat.addEventListener("click", () => Desk.openApp("vpn"));
+    paintVpnStat();
   }
 
   function children(id) {
@@ -177,7 +184,8 @@
       ["files", "Файлы", "assets/icons/icon-files.png"],
       ["calendar", "Календарь", "assets/icons/icon-calendar.png"],
       ["security", "Безопасность", "assets/icons/icon-security.png"],
-      ["portal", "Портал", "assets/icons/icon-portal.png"]
+      ["portal", "Портал", "assets/icons/icon-portal.png"],
+      ["vpn", "VPN", "assets/icons/icon-vpn.svg"]
     ].map(([id, title, icon]) => ({ id, title, icon }));
   }
 
@@ -1389,7 +1397,108 @@
       paintMessenger(body);
       return true;
     }
+    if (id === "vpn") {
+      paintVpn(body);
+      return true;
+    }
     return false;
+  }
+
+  let vpnBusy = false;
+
+  function paintVpnStat() {
+    const button = document.getElementById("vpnStat");
+    if (!button) return;
+    const on = !!(state.vpn && state.vpn.on);
+    button.classList.toggle("on", on);
+    button.replaceChildren(el("i", ""), el("span", "", on ? "VPN включён" : "VPN"));
+    button.setAttribute("aria-label", on ? "VPN включён" : "VPN выключен");
+  }
+
+  function maskCode(code) {
+    const text = String(code || "");
+    if (text.length <= 10) return "код сохранён";
+    return `${text.slice(0, 4)}…${text.slice(-4)}`;
+  }
+
+  function paintVpn(body) {
+    const vpn = state.vpn;
+    const hasCode = !!String(vpn.code || "").trim();
+    const phase = vpn.phase || "";
+    const shell = el("div", "vpn");
+    const power = el("button", `vpn-power${vpn.on ? " on" : ""}${phase ? " busy" : ""}`);
+    power.type = "button";
+    power.disabled = !hasCode || !!phase;
+    power.setAttribute("aria-pressed", vpn.on ? "true" : "false");
+    power.setAttribute("aria-label", vpn.on ? "Выключить VPN" : "Включить VPN");
+    power.innerHTML = `<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="36" r="16" fill="none" stroke="currentColor" stroke-width="4"/><path d="M32 12v16" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg>`;
+    power.addEventListener("click", () => {
+      if (vpnBusy || !hasCode) return;
+      const next = !vpn.on;
+      vpnBusy = true;
+      vpn.phase = next ? "connect" : "disconnect";
+      Desk.paint("vpn");
+      window.setTimeout(() => {
+        vpn.on = next;
+        vpn.phase = "";
+        vpnBusy = false;
+        persist();
+        Desk.paint("vpn");
+        paintVpnStat();
+      }, next ? 900 : 500);
+    });
+    const title = phase === "connect" ? "Подключение…" : phase === "disconnect" ? "Отключение…" : vpn.on ? "Подключено" : "Отключено";
+    const note = !hasCode
+      ? "Сначала вставьте код, который прислал IT."
+      : vpn.on
+        ? "Сеть компании включена. Пока это ни на что не влияет."
+        : "Код сохранён. Включите сеть, когда она понадобится.";
+    shell.append(power, el("h2", "", title), el("p", "quiet", note));
+    const card = el("div", "vpn-card");
+    card.appendChild(el("p", "k", "Код от IT"));
+    if (hasCode && !vpn.editing) {
+      const row = el("div", "vpn-saved");
+      row.append(el("b", "", maskCode(vpn.code)), el("span", "", "можно заменить"));
+      const edit = el("button", "btn vpn-btn", "Изменить");
+      edit.type = "button";
+      edit.addEventListener("click", () => {
+        vpn.editing = true;
+        Desk.paint("vpn");
+      });
+      card.append(row, edit);
+    } else {
+      const area = document.createElement("textarea");
+      area.value = vpn.code || "";
+      area.placeholder = "Вставьте код подключения";
+      area.addEventListener("input", () => { vpn.draft = area.value; });
+      const save = el("button", "btn vpn-btn", "Сохранить код");
+      save.type = "button";
+      save.addEventListener("click", () => {
+        vpn.code = area.value.trim();
+        vpn.draft = "";
+        vpn.editing = false;
+        if (!vpn.code) vpn.on = false;
+        persist();
+        Desk.paint("vpn");
+        paintVpnStat();
+      });
+      card.appendChild(area);
+      const actions = el("div", "vpn-actions");
+      actions.appendChild(save);
+      if (hasCode) {
+        const cancel = el("button", "btn vpn-btn ghost", "Отмена");
+        cancel.type = "button";
+        cancel.addEventListener("click", () => {
+          vpn.editing = false;
+          vpn.draft = "";
+          Desk.paint("vpn");
+        });
+        actions.appendChild(cancel);
+      }
+      card.appendChild(actions);
+    }
+    shell.appendChild(card);
+    body.appendChild(shell);
   }
 
   function activeFolder() {
