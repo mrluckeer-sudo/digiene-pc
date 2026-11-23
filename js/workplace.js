@@ -131,7 +131,11 @@
     if (!state.softReqs) state.softReqs = [];
     if (!state.vpn) state.vpn = { code: "", on: false };
     state.vpn.phase = "";
-    if (!String(state.vpn.code || "").trim()) state.vpn.on = false;
+    if (String(state.vpn.code || "").trim() !== VPN_INVITE) {
+      state.vpn.code = "";
+      state.vpn.on = false;
+    }
+    state.vpn.error = "";
     if (Array.isArray(state.installed) && !state.installed.includes("vpn")) state.installed.push("vpn");
     watchReminders();
     wrapBadges();
@@ -144,9 +148,12 @@
     document.addEventListener("pointerdown", (event) => {
       if (!event.target.closest("#menu")) closeMenu();
     });
-    if (coachStep()) watchCoach();
+    if (coachStep() || vpnCoachStep()) watchCoach();
     const vpnStat = document.getElementById("vpnStat");
-    if (vpnStat) vpnStat.addEventListener("click", () => Desk.openApp("vpn"));
+    if (vpnStat) vpnStat.addEventListener("click", () => {
+      Desk.openApp("vpn");
+      vpnCoachDone("status");
+    });
     paintVpnStat();
   }
 
@@ -195,6 +202,7 @@
     const button = el("button", "dicon");
     button.type = "button";
     if (item.app) button.dataset.app = item.app;
+    if (item.app === "vpn") button.dataset.coach = "vpn-app";
     const glyph = el("span", "glyph");
     glyph.appendChild(img(item.icon));
     if (item.app === "mail") {
@@ -1016,7 +1024,10 @@
       director: [{ id: "dm-dir", who: "director", text: "На связи буду урывками. Если что — пиши Павлу.", at: "08:40" }],
       assistant: [{ id: "dm-as", who: "assistant", text: "Директор просила не беспокоить её в полёте. Если письмо про оплату — пришлите тему, сверю по своим каналам.", at: "09:12" }],
       colleague: [{ id: "dm-col", who: "colleague", text: "Я на планёрке в 10:00. Если что-то срочное — лучше своими словами, без ссылок.", at: "09:30" }],
-      it: [{ id: "dm-it", who: "it", text: "Обновление ставим с портала. Вложение «от IT» из почты можно не открывать.", at: "18:06" }],
+      it: [
+        { id: "dm-it", who: "it", text: "Обновление ставим с портала. Вложение «от IT» из почты можно не открывать.", at: "18:06" },
+        { id: "dm-it-vpn", who: "it", text: "Для рабочего места нужен VPN. По регламенту в портал без включённого VPN заходить нельзя.", code: "NORD-VPN-19", at: "10:05" }
+      ],
       hr: [{ id: "dm-hr", who: "hr", text: "Карту для зарплаты подтверждаем только в кабинете на портале. Форма из письма не нужна.", at: "11:20" }]
     };
     return lines[id] || [];
@@ -1091,6 +1102,8 @@
     if (area && state.chatOpen) saveChatDraft(state.chatOpen, area.value);
   }
 
+  const VPN_INVITE = "NORD-VPN-19";
+
   function openChat(id) {
     if (id !== state.chatOpen) captureComposer();
     state.chatOpen = id;
@@ -1107,24 +1120,62 @@
     state.seen[id] = chatLines(id).length;
     persist();
     paintMsgBadge();
-    if (!isChannel(id)) scheduleReply(id, dmReply(id, line.text));
+    if (!isChannel(id) && !isRude(line.text)) scheduleReply(id, dmReply(id, line.text));
   }
 
-  function scheduleReply(id, text) {
+  function isRude(text) {
+    const s = String(text || "").toLowerCase().replace(/ё/g, "е");
+    return /(?:^|[^a-zа-я])(?:хуй|хуе|пизд|еба|ебл|ебу|бля|сука|мудак|мудил|гандон|пидор|пидар|дебил|идиот|дурак|дура|тупиц|тупой|тупая|урод|мраз|сволоч|козел|чмо|залуп|нахер|нахуй|пош[её]л\s+(?:ты|на)|пошла\s+(?:ты|на)|заткни|отвали|кретин|ублюд|жоп|ничтожеств|позор)/i.test(s);
+  }
+
+  function chatHistory(id) {
+    return chatLines(id).filter((line) => line && (line.text || (line.files || []).length)).slice(-10).map((line) => ({
+      from: line.who === "you" ? "you" : id,
+      role: line.who === "you" ? "user" : "assistant",
+      text: String(line.text || "Прислал файл без текста").slice(0, 500)
+    }));
+  }
+
+  function scheduleReply(id, scripted) {
     if (!state.typing) state.typing = {};
     state.typing[id] = (state.typing[id] || 0) + 1;
-    const wait = 1200 + Math.min(1400, String(text || "").length * 18);
-    window.setTimeout(() => {
-      const pack = state.chat[id] || (state.chat[id] = []);
-      pack.push({ id: uid("msg"), who: id, text, at: "сейчас" });
-      state.typing[id] -= 1;
-      if (state.typing[id] <= 0) delete state.typing[id];
-      if (state.chatOpen === id) state.seen[id] = chatLines(id).length;
-      persist();
-      paintMsgBadge();
+    const started = Date.now();
+    const paintTyping = () => {
       const win = document.querySelector('.win[data-app="messenger"]');
-      if (win && !win.classList.contains("min")) Desk.paint("messenger");
-    }, wait);
+      if (win && !win.classList.contains("min") && state.chatOpen === id) Desk.paint("messenger");
+    };
+    paintTyping();
+    const deliver = (text) => {
+      const clean = String(text || "").trim() || scripted;
+      const wait = Math.max(0, 1200 + Math.min(800, clean.length * 12) - (Date.now() - started));
+      window.setTimeout(() => {
+        const pack = state.chat[id] || (state.chat[id] = []);
+        pack.push({ id: uid("msg"), who: id, text: clean, at: "сейчас" });
+        state.typing[id] -= 1;
+        if (state.typing[id] <= 0) delete state.typing[id];
+        if (state.chatOpen === id) state.seen[id] = chatLines(id).length;
+        persist();
+        paintMsgBadge();
+        const win = document.querySelector('.win[data-app="messenger"]');
+        if (win && !win.classList.contains("min")) Desk.paint("messenger");
+      }, wait);
+    };
+    if (!window.NordAI || !NordAI.enabled()) {
+      deliver(scripted);
+      return;
+    }
+    NordAI.reply({ personaId: id, player: state.name, messages: chatHistory(id) }).then((res) => {
+      if (res && res.ignore) {
+        window.setTimeout(() => {
+          state.typing[id] -= 1;
+          if (state.typing[id] <= 0) delete state.typing[id];
+          const win = document.querySelector('.win[data-app="messenger"]');
+          if (win && !win.classList.contains("min")) Desk.paint("messenger");
+        }, 400);
+        return;
+      }
+      deliver(res && res.text);
+    });
   }
 
   function dmReply(id, text) {
@@ -1151,6 +1202,7 @@
     const log = shell.querySelector(".slack-log");
     if (log) log.scrollTop = log.scrollHeight;
     paintMsgBadge();
+    if (state.chatOpen === "it") offerVpnCoach();
   }
 
   function chatSide() {
@@ -1327,6 +1379,16 @@
       text.appendChild(linkedChat(line.text));
       body.appendChild(text);
     }
+    if (line.code) {
+      const code = el("button", "invite-code", line.code);
+      code.type = "button";
+      code.dataset.coach = "vpn-code";
+      code.addEventListener("click", () => {
+        if (navigator.clipboard) navigator.clipboard.writeText(line.code).catch(() => {});
+        vpnCoachDone("code");
+      });
+      body.appendChild(code);
+    }
     const files = line.files || (line.file ? [line.file] : []);
     if (files.length) {
       const row = el("div", "msg-files");
@@ -1437,6 +1499,7 @@
     const on = !!(state.vpn && state.vpn.on);
     button.classList.toggle("on", on);
     button.replaceChildren(el("i", ""), el("span", "", on ? "VPN включён" : "VPN"));
+    button.dataset.coach = "vpn-status";
     button.setAttribute("aria-label", on ? "VPN включён" : "VPN выключен");
   }
 
@@ -1448,7 +1511,7 @@
 
   function paintVpn(body) {
     const vpn = state.vpn;
-    const hasCode = !!String(vpn.code || "").trim();
+    const hasCode = String(vpn.code || "").trim() === VPN_INVITE;
     const phase = vpn.phase || "";
     const shell = el("div", "vpn");
     const power = el("button", `vpn-power${vpn.on ? " on" : ""}${phase ? " busy" : ""}`);
@@ -1456,7 +1519,8 @@
     power.disabled = !hasCode || !!phase;
     power.setAttribute("aria-pressed", vpn.on ? "true" : "false");
     power.setAttribute("aria-label", vpn.on ? "Выключить VPN" : "Включить VPN");
-    power.innerHTML = `<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="36" r="16" fill="none" stroke="currentColor" stroke-width="4"/><path d="M32 12v16" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg>`;
+    power.dataset.coach = "vpn-power";
+    power.innerHTML = `<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 12v16" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M22.5 22a16 16 0 1 0 19 0" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>`;
     power.addEventListener("click", () => {
       if (vpnBusy || !hasCode) return;
       const next = !vpn.on;
@@ -1470,39 +1534,55 @@
         persist();
         Desk.paint("vpn");
         paintVpnStat();
+        if (next) vpnCoachDone("power");
       }, next ? 900 : 500);
     });
     const title = phase === "connect" ? "Подключение…" : phase === "disconnect" ? "Отключение…" : vpn.on ? "Подключено" : "Отключено";
     const note = !hasCode
-      ? "Сначала вставьте код, который прислал IT."
+      ? "Без инвайт-кода сеть не включается."
       : vpn.on
-        ? "Сеть компании включена. Пока это ни на что не влияет."
-        : "Код сохранён. Включите сеть, когда она понадобится.";
+        ? "Сеть компании включена."
+        : "Инвайт-код принят. Включите сеть.";
     shell.append(power, el("h2", "", title), el("p", "quiet", note));
     const card = el("div", "vpn-card");
-    card.appendChild(el("p", "k", "Код от IT"));
     if (hasCode && !vpn.editing) {
       const row = el("div", "vpn-saved");
-      row.append(el("b", "", maskCode(vpn.code)), el("span", "", "можно заменить"));
+      row.append(el("b", "", "Инвайт-код принят"), el("span", "", maskCode(vpn.code)));
       const edit = el("button", "btn vpn-btn", "Изменить");
       edit.type = "button";
       edit.addEventListener("click", () => {
         vpn.editing = true;
+        vpn.draft = vpn.code || "";
+        vpn.error = "";
         Desk.paint("vpn");
       });
       card.append(row, edit);
     } else {
       const area = document.createElement("textarea");
-      area.value = vpn.code || "";
-      area.placeholder = "Вставьте код подключения";
+      area.value = vpn.draft != null ? vpn.draft : (vpn.code || "");
+      area.placeholder = "Вставьте инвайт-код для подключения";
+      area.dataset.coach = "vpn-paste";
       area.addEventListener("input", () => { vpn.draft = area.value; });
       const save = el("button", "btn vpn-btn", "Сохранить код");
       save.type = "button";
       save.addEventListener("click", () => {
-        vpn.code = area.value.trim();
-        vpn.draft = "";
-        vpn.editing = false;
-        if (!vpn.code) vpn.on = false;
+        const next = area.value.trim();
+        vpn.draft = next;
+        if (!next) {
+          vpn.code = "";
+          vpn.on = false;
+          vpn.error = "";
+          vpn.editing = false;
+        } else if (next !== VPN_INVITE) {
+          vpn.error = "Данный код не существует или уже был использован";
+          vpn.editing = true;
+        } else {
+          vpn.code = next;
+          vpn.error = "";
+          vpn.editing = false;
+          vpn.draft = "";
+          vpnCoachDone("paste");
+        }
         persist();
         Desk.paint("vpn");
         paintVpnStat();
@@ -1521,9 +1601,13 @@
         actions.appendChild(cancel);
       }
       card.appendChild(actions);
+      if (vpn.error) card.appendChild(el("p", "vpn-error", vpn.error));
     }
     shell.appendChild(card);
     body.appendChild(shell);
+    if (vpnCoachStep() === "app") vpnCoachDone("app");
+    if (vpnCoachStep() === "paste" && vpn.code === VPN_INVITE) vpnCoachDone("paste");
+    if (vpnCoachStep() === "power" && vpn.on) vpnCoachDone("power");
   }
 
   function activeFolder() {
@@ -1878,12 +1962,59 @@
     "pay-portal": "Зайдите в портал.",
     "pay-upload": "Загрузите счёт.",
     "pay-file": "Загрузите счёт.",
-    "pay-confirm": "Для подтверждения, нажмите на кнопку оплаты."
+    "pay-confirm": "Для подтверждения, нажмите на кнопку оплаты.",
+    "vpn-code": "Для настройки VPN скопируйте инвайт-код.",
+    "vpn-app": "Войдите в приложение VPN.",
+    "vpn-paste": "Вставьте инвайт-код.",
+    "vpn-power": "Включите VPN.",
+    "vpn-status": "Статус работы можно всегда увидеть в нижней панели."
   };
 
   function coachStep() {
     const value = state.guides && state.guides.payInvoice;
     return value === "download" || value === "portal" || value === "upload" || value === "pay" ? value : "";
+  }
+
+  function offerVpnCoach() {
+    state.guides = state.guides || {};
+    const vpn = state.vpn || {};
+    if (vpn.code === VPN_INVITE && vpn.on) {
+      state.guides.vpnSetup = "done";
+      state.guides.vpnInvited = true;
+      return;
+    }
+    if (!state.guides.vpnSetup) state.guides.vpnSetup = "code";
+    if (state.guides.vpnSetup === "done" || state.guides.vpnInvited) return;
+    state.guides.vpnInvited = true;
+    persist();
+    Desk.toast({
+      title: "Как настроить VPN?",
+      text: "Нажмите, и подсказки появятся на кнопках.",
+      icon: "assets/icons/icon-vpn.svg",
+      ms: 12000,
+      onClick: () => {
+        if (state.guides.vpnSetup === "done") return;
+        state.guides.vpnSetup = "code";
+        persist();
+        watchCoach();
+      }
+    });
+  }
+
+  function vpnCoachStep() {
+    const step = state.guides && state.guides.vpnSetup;
+    return step && step !== "done" ? step : "";
+  }
+
+  function vpnCoachDone(step) {
+    if (vpnCoachStep() !== step) return;
+    const order = ["code", "app", "paste", "power", "status", "done"];
+    state.guides.vpnSetup = order[order.indexOf(step) + 1] || "done";
+    persist();
+    if (state.guides.vpnSetup === "done") {
+      clearCoach();
+      if (coachStep()) watchCoach();
+    } else placeCoach();
   }
 
   function offerPayCoach() {
@@ -1908,8 +2039,10 @@
     const next = { download: "portal", portal: "upload", upload: "pay", pay: "done" };
     state.guides.payInvoice = next[step];
     persist();
-    if (state.guides.payInvoice === "done") clearCoach();
-    else placeCoach();
+    if (state.guides.payInvoice === "done") {
+      clearCoach();
+      if (vpnCoachStep()) watchCoach();
+    } else placeCoach();
   }
 
   function watchCoach() {
@@ -1933,10 +2066,22 @@
     if (step === "portal") return document.querySelector(".dicon[data-app='portal']");
     if (step === "upload") return document.querySelector("[data-coach='pay-file']") || document.querySelector("[data-coach='pay-upload']");
     if (step === "pay") return document.querySelector("[data-coach='pay-confirm']");
+    if (vpnCoachStep() === "code") return document.querySelector("[data-coach='vpn-code']");
+    if (vpnCoachStep() === "app") return document.querySelector("[data-coach='vpn-app']");
+    if (vpnCoachStep() === "paste") return document.querySelector("[data-coach='vpn-paste']");
+    if (vpnCoachStep() === "power") return document.querySelector("[data-coach='vpn-power']");
+    if (vpnCoachStep() === "status") return document.querySelector("[data-coach='vpn-status']");
     return null;
   }
 
   function placeCoach() {
+    if (vpnCoachStep() === "app") {
+      const win = document.querySelector(".win[data-app='vpn']");
+      if (win && !win.classList.contains("min")) {
+        vpnCoachDone("app");
+        return;
+      }
+    }
     const target = coachTarget();
     if (!target) {
       const ring = document.getElementById("coachRing");
@@ -1962,11 +2107,13 @@
       skip.type = "button";
       skip.className = "coach-skip";
       skip.textContent = "Пропустить";
-      skip.addEventListener("click", () => {
-        state.guides.payInvoice = "done";
-        persist();
-        clearCoach();
-      });
+    skip.addEventListener("click", () => {
+      if (coachStep()) state.guides.payInvoice = "done";
+      else if (vpnCoachStep()) state.guides.vpnSetup = "done";
+      persist();
+      clearCoach();
+      if (coachStep() || vpnCoachStep()) watchCoach();
+    });
       tip.append(document.createElement("p"), skip);
       document.getElementById("desk").append(ring, tip);
     }

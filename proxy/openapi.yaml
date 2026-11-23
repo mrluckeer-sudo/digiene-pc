@@ -1,0 +1,20 @@
+openapi: 3.0.0
+info:
+  title: digiene-pc-ai
+  version: 1.0.0
+paths:
+  /chat:
+    x-yc-apigateway-cors:
+      origin: true
+      methods: POST
+      allowedHeaders: Content-Type
+      maxAge: 600
+    post:
+      x-yc-apigateway-integration:
+        type: cloud_functions
+        function_id: FUNCTION_ID
+        tag: "$latest"
+        service_account_id: GATEWAY_SA_ID
+      responses:
+        "200":
+          description: reply

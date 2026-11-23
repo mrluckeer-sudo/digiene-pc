@@ -39,4 +39,6 @@ yc storage bucket update --name digiene-pc --public-read --website-settings-from
 
 GitHub: Settings → Secrets and variables → Actions → New repository secret.
 
-Ключ API языковой модели в этот репозиторий и на сайт не класть.
+Ключ API языковой модели в этот репозиторий и на сайт не класть. Он живёт только в окружении Cloud Function `proxy/`. Функцию не открывать для неаутентифицированного вызова: снаружи её зовёт API Gateway от сервисного аккаунта.
+
+Когда шлюз уже создан, в секреты этого репозитория добавить `YC_AI_PROXY_URL` (адрес вида `https://<шлюз>.apigw.yandexcloud.net/chat`). При деплое он попадает в `dist/config.js`. В git остаётся выключенная заготовка. Без секрета личные ответы остаются заготовленными. Школьный прокси телефона сюда не подставлять: у него другие персонажи.
