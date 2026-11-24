@@ -49,6 +49,8 @@ button, input, textarea { font: inherit; color: inherit; }
 
 .glyph { position: relative; display: block; }
 
+.dicon, .win-bar, .grip { touch-action: none; }
+.dicon img, .win-bar img { -webkit-user-drag: none; pointer-events: none; }
 .dicon img {
   width: 64px;
   height: 64px;
@@ -753,8 +755,8 @@ button, input, textarea { font: inherit; color: inherit; }
 .pop-list button { text-align: left; }
 
 .mail-shell, .explorer { height: 100%; display: grid; min-height: 0; }
-.mail-shell { grid-template-columns: 168px 250px 1fr; }
-.mail-shell.wide { grid-template-columns: 168px 1fr; }
+.mail-shell { grid-template-columns: 220px 250px 1fr; }
+.mail-shell.wide { grid-template-columns: 220px 1fr; }
 .folders button.write {
   background: var(--ink);
   color: white;
@@ -1024,7 +1026,10 @@ button, input, textarea { font: inherit; color: inherit; }
   border-radius: 10px;
 }
 .folders button { padding: 8px 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; }
-.folders button .count { min-width: 1.2em; color: #1b6f78; font-weight: 700; text-align: right; }
+.folders button > span:first-child { white-space: nowrap; }
+.folders button .count { margin-left: auto; color: var(--ink); font-weight: 650; font-size: 12px; text-align: right; white-space: nowrap; }
+.folders button .mail-total { display: inline-flex; align-items: center; gap: 6px; }
+.mail-dot { width: 7px; height: 7px; border-radius: 50%; background: #e2b431; display: inline-block; }
 .folders button.on, .file-row.on { background: white; }
 .mail-main, .file-main { min-width: 0; min-height: 0; overflow: auto; }
 .meta { margin: 0 0 4px; color: var(--muted); font-size: 13px; }
@@ -1107,7 +1112,18 @@ button, input, textarea { font: inherit; color: inherit; }
   font-weight: 500;
 }
 .account-form .btn { margin: 0; justify-self: start; }
-.portal nav .account-link { margin: 10px 8px 4px; font-weight: 700; }
+.portal nav .account-link { margin: 10px 8px 4px; font-weight: 700; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.portal nav .count { min-width: 1.2em; color: #1b6f78; font-weight: 700; text-align: right; }
+.task-card { display: flex; gap: 10px; align-items: flex-start; background: white; border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+.task-mark { width: 16px; height: 16px; margin-top: 2px; border: 1.5px solid var(--ink); border-radius: 4px; display: grid; place-items: center; flex: none; font-size: 11px; line-height: 1; color: white; }
+.task-card.done .task-mark { background: #1b6f78; border-color: #1b6f78; }
+.task-body { display: grid; gap: 4px; }
+.task-body small { color: var(--muted); }
+.task-widget { position: absolute; z-index: 2; top: 16px; right: 16px; width: 260px; display: grid; gap: 8px; padding: 12px; border-radius: 16px; background: rgba(244, 241, 234, .92); box-shadow: 0 10px 28px rgba(8, 16, 28, .18); }
+.task-widget > b { font-size: 13px; }
+.task-card.compact { padding: 8px; background: rgba(255,255,255,.8); }
+.task-card.compact .task-body b { font-size: 13px; }
+.task-widget .btn { justify-self: start; }
 .gate { display: grid; gap: 10px; max-width: 360px; }
 .gate input { padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(27,42,74,.16); }
 .portal-session { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 12px; background: #e7f4f6; border-bottom: 1px solid var(--line); }

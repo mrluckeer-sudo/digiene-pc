@@ -407,25 +407,47 @@ function addTask(id) {
   document.getElementById("tasks").appendChild(button);
 }
 
+function pointerDrag(event, onMove, onEnd) {
+  if (event.button != null && event.button !== 0) return;
+  event.preventDefault();
+  const handle = event.currentTarget;
+  if (handle && handle.setPointerCapture) {
+    try { handle.setPointerCapture(event.pointerId); } catch (err) { /* указатель уже отпущен */ }
+  }
+  function move(ev) {
+    if ((ev.buttons & 1) === 0) {
+      end(ev);
+      return;
+    }
+    onMove(ev);
+  }
+  function end(ev) {
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", end);
+    document.removeEventListener("pointercancel", end);
+    if (handle && handle.hasPointerCapture && ev.pointerId != null && handle.hasPointerCapture(ev.pointerId)) {
+      try { handle.releasePointerCapture(ev.pointerId); } catch (err) { /* захват уже снят */ }
+    }
+    if (onEnd) onEnd();
+  }
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", end);
+  document.addEventListener("pointercancel", end);
+}
+
 function drag(bar, win) {
   bar.addEventListener("pointerdown", (event) => {
-    if (event.target.closest("button")) return;
+    if (event.button !== 0 || event.target.closest("button")) return;
     win.classList.remove("max");
     const desk = document.getElementById("desk").getBoundingClientRect();
     const originX = event.clientX - win.offsetLeft;
     const originY = event.clientY - win.offsetTop;
-    function move(ev) {
+    pointerDrag(event, (ev) => {
       const x = Math.max(8, Math.min(ev.clientX - desk.left - originX, desk.width - win.offsetWidth - 8));
       const y = Math.max(8, Math.min(ev.clientY - desk.top - originY, desk.height - 96));
       win.style.left = `${x}px`;
       win.style.top = `${y}px`;
-    }
-    function up() {
-      bar.removeEventListener("pointermove", move);
-      bar.removeEventListener("pointerup", up);
-    }
-    bar.addEventListener("pointermove", move);
-    bar.addEventListener("pointerup", up);
+    });
   });
 }
 
@@ -880,4 +902,4 @@ function toast(options) {
   }, options.ms || 6500);
 }
 
-window.Desk = { state, persist, openApp, paint, paintWho, applyIcons, paintNotes, refreshBadges, addLedger, openPreview, openNote, toast, ROLES, PLAYER_FACES };
+window.Desk = { state, persist, openApp, paint, paintWho, applyIcons, paintNotes, refreshBadges, addLedger, openPreview, openNote, toast, pointerDrag, ROLES, PLAYER_FACES };

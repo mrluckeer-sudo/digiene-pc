@@ -330,6 +330,7 @@
     persist();
     chatToast("it", "Сергей Плотников", line, "assets/people/man_4.png");
     if (window.NordCoach) NordCoach.vpn();
+    syncTasks();
   }
 
   function issueCode() {
@@ -405,19 +406,36 @@
     Desk.toast({ app: "mail", title: "Портал НОРД", text: subject, letterId: id, ms: 9000 });
   }
 
-  function markRecovered() {
+  function leakMoment() {
     const row = scene();
-    if (!row.phishIn && !row.codeSent) return;
-    if (row.sessionsKilled && row.changedAt > Math.max(row.c01At, row.c03At, 0)) {
-      row.recovered = true;
-      addExposure("recover", "После инцидента пароль сменили и завершили чужие сессии.", 0, "Восстановление");
-      persist();
+    return row.phishInAt || row.c01At || 0;
+  }
+
+  function recoveryFacts() {
+    const row = scene();
+    if (row.codeSent) {
+      const asked = (row.reportedAt || 0) > (row.leakedAt || row.c03At || 0);
+      return { kind: "code", pending: !asked, asked };
     }
+    if (row.phishIn) {
+      const since = leakMoment();
+      const sessions = !!since && (row.sessionsKilledAt || 0) > since;
+      const password = !!since && row.changedAt > since && row.password !== TEMP;
+      const told = !!since && (row.reportedAt || 0) > since;
+      return { kind: "creds", pending: !(sessions && password && told), sessions, password, told };
+    }
+    return { kind: "none", pending: false };
+  }
+
+  function markRecovered() {
+    const facts = recoveryFacts();
+    scene().recovered = facts.kind !== "none" && !facts.pending;
   }
 
   function tick() {
     const row = scene();
     if (!row.started || row.debrief || !state.onboardingDone) return;
+    syncTasks();
     const now = Date.now();
     if (!row.vpnSent && now - row.started > 20000) sendVpn();
     if (row.vpnSent && !row.vpnSentAt) row.vpnSentAt = row.started + 20000;
@@ -474,6 +492,7 @@
   function openDebrief(reason) {
     const row = scene();
     if (row.debrief) return;
+    markRecovered();
     row.debrief = true;
     row.reason = reason;
     if (row.portalIn && row.portalVpn === false) addExposure("vpn", "Вход в портал без VPN.", 2, "Гигиена канала");
@@ -504,6 +523,25 @@
       line.append(el("b", "", name), el("span", "", text));
       card.appendChild(line);
     });
+    const facts = recoveryFacts();
+    if (facts.kind === "creds") {
+      card.appendChild(el("h2", "", "После чужого входа"));
+      [
+        ["Сессии", facts.sessions ? "Чужие сессии завершены." : "Чужие сессии не завершены. Вход с другого устройства остался открыт."],
+        ["Пароль", facts.password ? "Пароль сменён после того, как его ввели на поддельной странице." : "После чужого входа пароль не сменили. У того, кто его получил, остался рабочий пароль."],
+        ["IT или ИБ", facts.told ? "После входа написали в IT или информационную безопасность." : "После входа в IT или информационную безопасность не написали."]
+      ].forEach(([name, text]) => {
+        const line = el("p", "debrief-row");
+        line.append(el("b", "", name), el("span", "", text));
+        card.appendChild(line);
+      });
+    } else if (facts.kind === "code") {
+      card.appendChild(el("h2", "", "После утечки кода"));
+      card.appendChild(el("p", "", "Код подтверждения ушёл не сотруднику. Этим кодом пароль на учётной записи уже сменили, поэтому войти со старым и поменять его самостоятельно нельзя. Сбросить запись должны IT или информационная безопасность."));
+      const line = el("p", "debrief-row");
+      line.append(el("b", "", "Сброс"), el("span", "", facts.asked ? "После утечки кода написали в IT или информационную безопасность." : "После утечки кода в IT или информационную безопасность не написали."));
+      card.appendChild(line);
+    }
     card.appendChild(el("h2", "", "Навыки"));
     const skills = [
       ["Пароли", row.passwordRank === "strong" ? "Да" : "Нет"],
@@ -511,7 +549,7 @@
       ["Распознавание фишинга", row.phishIn ? "Нет" : "Да"],
       ["Социальная инженерия", row.codeSent ? "Нет" : "Да"],
       ["Коммуникация", row.reported ? "Да" : "Нет"],
-      ["Восстановление", row.phishIn || row.codeSent ? (row.recovered ? "Да" : "Нет") : "Не потребовалось"]
+      ["Восстановление", facts.kind === "none" ? "Не потребовалось" : facts.pending ? "Нет" : "Да"]
     ];
     skills.forEach(([name, value]) => {
       const line = el("p", "debrief-row");
@@ -636,6 +674,7 @@
       persist();
       if (onSuccess) onSuccess();
       else Desk.paint("portal");
+      syncTasks();
       tick();
     });
     page.appendChild(form);
@@ -675,6 +714,7 @@
         return;
       }
       row.phishIn = true;
+      row.phishInAt = Date.now();
       persist();
       page.replaceChildren(el("p", "k", "nord-portal.example"), el("h2", "", "Вход выполнен"), el("p", "", "Учётная запись подтверждена."));
       tick();
@@ -703,7 +743,9 @@
     kill.addEventListener("click", () => {
       touch();
       row.sessionsKilled = true;
+      row.sessionsKilledAt = Date.now();
       markRecovered();
+      syncTasks();
       Desk.toast({ title: "Портал", text: "Все сессии, кроме этой, завершены.", ms: 4000 });
       tick();
       Desk.paint("portal");
@@ -837,6 +879,7 @@
   function noteReport(via) {
     const row = scene();
     row.reported = true;
+    row.reportedAt = Date.now();
     if (!row.reportVia) row.reportVia = via;
     if (via === "it-support") row.contactedSupport = true;
     if (via === "Кирилл Антонов") {
@@ -845,6 +888,7 @@
       row.kirillAnsweredAt = Date.now();
     }
     persist();
+    syncTasks();
   }
 
   function handleChat(id, line) {
@@ -855,6 +899,7 @@
     if (id === "ilya") {
       if (looksLikeCode(text)) {
         row.codeSent = true;
+        row.leakedAt = Date.now();
         row.ilyaPhase = "got";
         window.setTimeout(() => {
           pushChat("ilya", "Принял, сверяю с логом.");
@@ -878,6 +923,7 @@
       return false;
     }
     if (report) {
+      addIncident(personById(id));
       window.setTimeout(() => pushChat(id, `${hello(id)}${REDIRECT}`), 900);
       return true;
     }
@@ -899,6 +945,7 @@
     }
     if (!report) return;
     const speaker = { "c-general": "hr", "c-sales": "misha", "c-projects": "colleague", "c-hr": "hr" }[id] || "hr";
+    addIncident(personById(speaker));
     window.setTimeout(() => pushChat(id, `${hello(speaker)}${REDIRECT}`), 900);
   }
 
@@ -952,9 +999,159 @@
       security: { name: "Кирилл Антонов", email: "k.antonov@nord.example", icon: "assets/people/man_2.png" },
       support: { name: "Поддержка IT", email: SUPPORT, icon: "" },
       oleg: { name: "Олег Березин", email: PHISH_MAIL, icon: "" },
-      ilya: { name: "Илья Фомин", email: "i.fomin@nord-portal.example", icon: "" }
+      ilya: { name: "Илья Фомин", email: "i.fomin@nord-portal.example", icon: "" },
+      misha: { name: "Миша Соколов", email: "m.sokolov@nord.example", icon: "assets/people/man_1.png" },
+      hr: { name: "Ольга Репина", email: "o.repina@nord.example", icon: "assets/people/woman_3.png" },
+      assistant: { name: "Павел Орлов", email: "p.orlov@nord.example", icon: "assets/people/man_3.png" }
     };
     return people[id];
+  }
+
+  function taskList() {
+    const row = scene();
+    if (!row.tasks) row.tasks = [];
+    return row.tasks;
+  }
+
+  let syncingTasks = false;
+
+  function refreshTasks() {
+    paintDeskTasks();
+    if (document.querySelector('.win[data-app="portal"]')) Desk.paint("portal");
+  }
+
+  function addTask(id, title, person) {
+    const list = taskList();
+    if (list.some((item) => item.id === id)) return;
+    list.push({
+      id,
+      title,
+      by: person.name,
+      avatar: person.icon || "",
+      due: "сегодня",
+      done: false
+    });
+    persist();
+    if (!syncingTasks) refreshTasks();
+  }
+
+  function completeTask(id) {
+    const item = taskList().find((task) => task.id === id);
+    if (!item || item.done) return;
+    item.done = true;
+    persist();
+  }
+
+  function dropTask(id) {
+    const list = taskList();
+    const index = list.findIndex((task) => task.id === id);
+    if (index < 0) return;
+    list.splice(index, 1);
+    persist();
+  }
+
+  function syncTasks() {
+    const row = scene();
+    const before = `${recoveryFacts().pending ? 1 : 0}|${taskList().map((task) => `${task.id}:${task.done ? 1 : 0}`).join(",")}`;
+    syncingTasks = true;
+    if ((state.letters || []).some((letter) => letter.id === "welcome")) {
+      addTask("enter", "Войти в корпоративный портал", personById("director"));
+    }
+    if (row.vpnSent) addTask("vpn", "Настроить VPN", personById("it"));
+    if (row.billAt || (state.letters || []).some((letter) => letter.id === "bill")) {
+      addTask("pay", "Оплатить счёт УЧ-1042", personById("colleague"));
+    }
+    if (state.vpn && state.vpn.on && String(state.vpn.code || "").trim() === VPN) row.vpnReady = true;
+    if (row.reported) completeTask("incident");
+    if (row.portalIn) completeTask("enter");
+    if (row.vpnReady) completeTask("vpn");
+    if (billPaid()) completeTask("pay");
+    const director = personById("director");
+    if (row.codeSent && row.c03At) {
+      dropTask("sessions");
+      dropTask("password");
+      dropTask("tell");
+      addTask("reset", "Обратиться в IT или ИБ, чтобы сбросили учётную запись", director);
+      if ((row.reportedAt || 0) > (row.leakedAt || row.c03At)) completeTask("reset");
+    } else if (row.phishIn && row.c02At) {
+      addTask("sessions", "Завершить все сессии", director);
+      addTask("password", "Сменить пароль", director);
+      addTask("tell", "Сообщить в IT или ИБ о случившемся", director);
+      const facts = recoveryFacts();
+      if (facts.sessions) completeTask("sessions");
+      if (facts.password) completeTask("password");
+      if (facts.told) completeTask("tell");
+    }
+    markRecovered();
+    syncingTasks = false;
+    const after = `${recoveryFacts().pending ? 1 : 0}|${taskList().map((task) => `${task.id}:${task.done ? 1 : 0}`).join(",")}`;
+    paintDeskTasks();
+    if (before !== after && document.querySelector('.win[data-app="portal"]')) Desk.paint("portal");
+  }
+
+  function addIncident(person) {
+    if (!person) return;
+    addTask("incident", "Сообщить об инциденте, связанном с подозрительными письмами", person);
+  }
+
+  function tasksReady() {
+    const list = taskList();
+    if (!list.some((task) => task.id === "enter" && task.done)) return false;
+    if (!list.some((task) => task.id === "pay" && task.done)) return false;
+    if (!list.every((task) => task.done)) return false;
+    return !recoveryFacts().pending;
+  }
+
+  function taskCard(task, compact) {
+    const card = el("div", `${compact ? "task-card compact" : "task-card"}${task.done ? " done" : ""}`);
+    card.appendChild(el("span", "task-mark", task.done ? "✓" : ""));
+    const body = el("span", "task-body");
+    body.append(el("b", "", task.title), el("small", "", `${task.by} · ${task.due}`));
+    card.appendChild(body);
+    return card;
+  }
+
+  function finishControl() {
+    const button = el("button", "btn", "Завершить дела");
+    button.type = "button";
+    button.disabled = !tasksReady();
+    button.addEventListener("click", () => {
+      if (tasksReady()) openDebrief("tasks");
+    });
+    return button;
+  }
+
+  function paintTasks() {
+    const page = el("div", "account-page");
+    page.append(el("h2", "", "Задачи"), el("p", "quiet", "Дела отмечаются сами, когда вы их сделали. Когда список закрыт, можно завершить дела."));
+    const list = taskList();
+    if (!list.length) {
+      page.appendChild(el("p", "", "Задач пока нет."));
+      return page;
+    }
+    list.forEach((task) => page.appendChild(taskCard(task)));
+    page.appendChild(finishControl());
+    return page;
+  }
+
+  function openTaskCount() {
+    return taskList().filter((task) => !task.done).length;
+  }
+
+  function paintDeskTasks() {
+    const row = scene();
+    const signature = `${row.portalIn ? 1 : 0}${row.debrief ? 1 : 0}${recoveryFacts().pending ? 1 : 0}|${taskList().map((task) => `${task.id}:${task.done ? 1 : 0}`).join(",")}`;
+    if (signature === paintDeskTasks.signature && (document.getElementById("taskWidget") || !row.portalIn || row.debrief || !taskList().length)) return;
+    paintDeskTasks.signature = signature;
+    const old = document.getElementById("taskWidget");
+    if (old) old.remove();
+    if (!row.portalIn || row.debrief || !taskList().length) return;
+    const widget = el("aside", "task-widget");
+    widget.id = "taskWidget";
+    widget.appendChild(el("b", "", "Задачи"));
+    taskList().forEach((task) => widget.appendChild(taskCard(task, true)));
+    widget.appendChild(finishControl());
+    document.getElementById("desk").appendChild(widget);
   }
 
   function personaByEmail(email) {
@@ -982,11 +1179,17 @@
     const latest = [...(letter.thread || [])].reverse().find((part) => part.email === player().email);
     const report = looksLikeReport(latest && latest.text, letter.from && letter.from.email === player().email ? letter.files : []);
     const official = emails.find((email) => OFFICIAL_MAIL.has(email));
+    const persona = emails.map(personaByEmail).find(Boolean);
+    if (!row.codeSent && looksLikeCode(latest && latest.text) && emails.includes(personById("ilya").email)) {
+      row.codeSent = true;
+      row.leakedAt = Date.now();
+      row.ilyaPhase = "got";
+    }
     if (report && official) {
       noteReport(official === SUPPORT ? "it-support" : official === "k.antonov@nord.example" ? "Кирилл Антонов" : "Сергей Плотников");
     }
+    if (report && !official && persona && persona !== "oleg") addIncident(personById(persona));
     if (emails.includes(PHISH_MAIL)) row.phishAnswered = true;
-    const persona = emails.map(personaByEmail).find(Boolean);
     persist();
     if (!persona) return;
     const source = letter;
@@ -1151,6 +1354,7 @@
   const endStage = document.getElementById("endStage");
   if (endStage) endStage.addEventListener("click", () => openDebrief("manual"));
 
-  window.Stage1 = { prepare, begin, richText, paintBrowser, paintLogin, paintAccount, paintJournal, handleChat, handleChannel, onSent, note, shoot: armShot, touch };
+  window.Stage1 = { prepare, begin, richText, paintBrowser, paintLogin, paintAccount, paintJournal, paintTasks, openTaskCount, handleChat, handleChannel, onSent, note, shoot: armShot, touch, sync: syncTasks };
+  syncTasks();
   if (state.onboardingDone && scene().started && !tick.timer) tick.timer = window.setInterval(tick, 2000);
 }());

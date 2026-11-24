@@ -237,7 +237,7 @@
     const desk = document.getElementById("desk").getBoundingClientRect();
     const start = { x: event.clientX, y: event.clientY, left: button.offsetLeft, top: button.offsetTop };
     let dragged = false;
-    function move(ev) {
+    Desk.pointerDrag(event, (ev) => {
       const dx = ev.clientX - start.x;
       const dy = ev.clientY - start.y;
       if (!dragged && Math.hypot(dx, dy) < 5) return;
@@ -247,16 +247,11 @@
       button.style.left = `${x}px`;
       button.style.top = `${y}px`;
       state.iconPos[item.key] = { x, y };
-    }
-    function up() {
-      button.removeEventListener("pointermove", move);
-      button.removeEventListener("pointerup", up);
+    }, () => {
       if (dragged) persist();
       else if (item.app) Desk.openApp(item.app);
       else openNode(state.nodes[item.file]);
-    }
-    button.addEventListener("pointermove", move);
-    button.addEventListener("pointerup", up);
+    });
   }
 
   function onDeskMenu(event) {
@@ -1579,6 +1574,7 @@
         persist();
         Desk.paint("vpn");
         paintVpnStat();
+        if (window.Stage1 && Stage1.sync) Stage1.sync();
         if (next) vpnCoachDone("power");
       }, next ? 900 : 500);
     });
@@ -1967,18 +1963,17 @@
     write.addEventListener("click", () => beginCompose());
     rail.appendChild(write);
     [["inbox", "Входящие"], ["sent", "Отправленные"], ["drafts", "Черновики"], ["spam", "Спам"], ["trash", "Удалённые"]].forEach(([id, title]) => {
-      const count = id === "inbox"
-        ? lettersIn("inbox").filter((letter) => !letter.read).length
-        : id === "sent"
-          ? lettersIn("sent").length
-          : id === "drafts"
-            ? lettersIn("drafts").length
-            : 0;
       const reading = state.mailUi.view === "mail" && state.mailUi.mode !== "compose" && state.mailUi.folder === id;
       const button = el("button", reading ? "on" : "");
       button.type = "button";
       button.appendChild(el("span", "", title));
-      if (count) button.appendChild(el("span", "count", String(count)));
+      if (id === "inbox") {
+        const rows = lettersIn("inbox");
+        const unread = rows.filter((letter) => !letter.read).length;
+        const mark = el("span", "count mail-total");
+        mark.append(el("i", "mail-dot"), document.createTextNode(`${unread} / ${rows.length}`));
+        button.appendChild(mark);
+      }
       button.addEventListener("click", () => openFolder(id));
       rail.appendChild(button);
     });
@@ -1996,14 +1991,13 @@
     const list = el("div", "list");
     const mine = me().email;
     lettersIn(state.mailUi.folder).forEach((letter) => {
-      const last = (letter.thread || [])[letter.thread.length - 1];
       const who = state.mailUi.folder === "sent"
         ? (letter.to || []).map((person) => person.name).join(", ") || "Без адресата"
         : ((letter.thread || []).slice().reverse().find((part) => part.email && part.email !== mine) || {}).author || letter.from.name;
       const unread = state.mailUi.folder === "inbox" && !letter.read;
       const button = el("button", `row${letter.id === state.mailUi.letter ? " on" : ""}${unread ? " unread" : ""}`);
       button.type = "button";
-      button.append(el("b", "", who), el("span", "sub", letter.subject), el("small", "", last ? String(last.text || "").replace(/\s+/g, " ").trim() : letter.stamp));
+      button.append(el("b", "", who), el("span", "sub", letter.subject));
       button.addEventListener("click", () => {
         if (letter.folder === "drafts") {
           editDraft(letter);
@@ -2592,6 +2586,16 @@
         Desk.paint("portal");
       });
       nav.appendChild(journal);
+      const taskLink = el("button", state.portalSection === "tasks" ? "on account-link" : "account-link");
+      taskLink.type = "button";
+      taskLink.appendChild(el("span", "", "Задачи"));
+      const open = window.Stage1 && Stage1.openTaskCount ? Stage1.openTaskCount() : 0;
+      if (open) taskLink.appendChild(el("span", "count", String(open)));
+      taskLink.addEventListener("click", () => {
+        state.portalSection = "tasks";
+        Desk.paint("portal");
+      });
+      nav.appendChild(taskLink);
     }
     portalGroups().forEach(([group, items]) => {
       nav.appendChild(el("p", "group", group === yours ? `${group} · ваш` : group));
@@ -2626,6 +2630,7 @@
     };
     if (window.NORD_STAGE === "1" && state.portalSection === "account" && window.Stage1) page.appendChild(Stage1.paintAccount());
     else if (window.NORD_STAGE === "1" && state.portalSection === "journal" && window.Stage1) page.appendChild(Stage1.paintJournal());
+    else if (window.NORD_STAGE === "1" && state.portalSection === "tasks" && window.Stage1) page.appendChild(Stage1.paintTasks());
     else page.appendChild((pages[state.portalSection] || payPage)());
     grid.append(nav, page);
     shell.appendChild(grid);
@@ -2702,6 +2707,7 @@
     state.payFile = null;
     coachDone("pay");
     persist();
+    if (window.Stage1 && Stage1.sync) Stage1.sync();
     Desk.paint("portal");
     if (document.querySelector('.win[data-app="calendar"]')) Desk.paint("calendar");
   }
@@ -3061,16 +3067,10 @@
     win.classList.remove("max");
     max.textContent = "□";
     const start = { x: event.clientX, y: event.clientY, w: win.offsetWidth, h: win.offsetHeight };
-    function move(ev) {
+    Desk.pointerDrag(event, (ev) => {
       if (dir !== "s") win.style.width = `${Math.max(460, start.w + ev.clientX - start.x)}px`;
       if (dir !== "e") win.style.height = `${Math.max(300, start.h + ev.clientY - start.y)}px`;
-    }
-    function up() {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    }
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    });
   }
 
   window.NordCoach = { vpn: offerVpnCoach, pay: offerPayCoach };
