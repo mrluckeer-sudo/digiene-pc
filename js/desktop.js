@@ -1,4 +1,4 @@
-const KEY = "nord-desktop-v2";
+const KEY = window.NORD_STAGE === "1" ? "nord-stage-1b" : "nord-desktop-v2";
 
 const ROLES = [
   ["finance", "Провожу платежи и работаю со счетами"],
@@ -98,6 +98,7 @@ let portalCard = "check";
 function fresh() {
   return {
     name: "",
+    surname: "",
     avatar: "",
     mfa: false,
     mfaReminded: false,
@@ -167,6 +168,14 @@ function mount() {
     icons.appendChild(button);
   });
   document.getElementById("bell").addEventListener("click", () => {
+    if (window.NORD_STAGE === "1") {
+      const missed = state.missed || [];
+      state.missed = [];
+      persist();
+      refreshBadges();
+      missed.forEach((item) => toast(item));
+      return;
+    }
     const tray = document.getElementById("tray");
     tray.hidden = !tray.hidden;
     if (!tray.hidden && state.onboardingDone && !state.mfa) {
@@ -206,7 +215,7 @@ function applyIcons() {
 }
 
 function paintWho() {
-  const name = state.name.trim();
+  const name = [state.name, state.surname].filter((part) => part && part.trim()).join(" ");
   document.getElementById("whoName").textContent = name || "Сотрудник";
   const mark = document.getElementById("whoMark");
   mark.replaceChildren();
@@ -252,7 +261,7 @@ function refreshBadges() {
   badge.hidden = count === 0;
   badge.textContent = String(count);
   const bell = document.getElementById("bellBadge");
-  const pending = currentNotes().length;
+  const pending = window.NORD_STAGE === "1" ? (state.missed || []).length : currentNotes().length;
   bell.hidden = pending === 0;
   bell.textContent = String(pending || "");
 }
@@ -260,7 +269,7 @@ function refreshBadges() {
 function currentNotes() {
   if (!state.onboardingDone) return [];
   const list = [];
-  if (!state.mfa && !state.mfaReminded) {
+  if (!state.mfa && !state.mfaReminded && window.NORD_STAGE !== "1") {
     list.push(["Безопасность", "Второй ключ пока выключен. Его можно включить в приложении «Безопасность».", "security"]);
   }
   if (state.ledger.length && !state.reviewSeen) {
@@ -617,6 +626,7 @@ function replyFor(id, text) {
 }
 
 function paintBrowser(body) {
+  if (window.Stage1 && Stage1.paintBrowser(body)) return;
   const bar = el("form", "addr");
   const input = document.createElement("input");
   input.value = state.browserUrl || "https://portal.nord.example";
@@ -803,6 +813,22 @@ function closePreview() {
 
 mount();
 
+function rememberMissed(options) {
+  if (window.NORD_STAGE !== "1") return;
+  if (!state.missed) state.missed = [];
+  state.missed.push({
+    title: options.title || "",
+    text: options.text || "",
+    icon: options.icon || "",
+    app: options.app || "",
+    chat: options.chat || "",
+    letterId: options.letterId || ""
+  });
+  if (state.missed.length > 12) state.missed.shift();
+  persist();
+  refreshBadges();
+}
+
 function toast(options) {
   const layer = document.getElementById("toasts");
   if (!layer) return;
@@ -813,6 +839,7 @@ function toast(options) {
   text.append(el("b", "", options.title), el("span", "", options.text));
   node.appendChild(text);
   let gone = false;
+  let opened = false;
   function close() {
     if (gone) return;
     gone = true;
@@ -820,6 +847,7 @@ function toast(options) {
     window.setTimeout(() => node.remove(), 260);
   }
   node.addEventListener("click", () => {
+    opened = true;
     close();
     if (typeof options.onClick === "function") {
       options.onClick();
@@ -829,10 +857,25 @@ function toast(options) {
       activeChat = options.chat;
       state.chatOpen = options.chat;
     }
+    if (options.letterId) {
+      const letter = (state.letters || []).find((item) => item.id === options.letterId);
+      if (!state.mailUi) state.mailUi = { folder: "inbox", letter: "", mode: "read", view: "mail", compose: null };
+      if (letter) {
+        state.mailUi.folder = letter.folder;
+        state.mailUi.letter = letter.id;
+        state.mailUi.mode = "read";
+        state.mailUi.view = "mail";
+        state.mailUi.compose = null;
+        persist();
+      }
+    }
     if (options.app) openApp(options.app);
   });
   layer.appendChild(node);
-  window.setTimeout(close, options.ms || 6500);
+  window.setTimeout(() => {
+    close();
+    if (!opened) rememberMissed(options);
+  }, options.ms || 6500);
 }
 
 window.Desk = { state, persist, openApp, paint, paintWho, applyIcons, paintNotes, refreshBadges, addLedger, openPreview, openNote, toast, ROLES, PLAYER_FACES };

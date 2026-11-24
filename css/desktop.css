@@ -1058,3 +1058,54 @@ button, input, textarea { font: inherit; color: inherit; }
   .card { display: none; }
   .task span { display: none; }
 }
+#shot, #endStage { border: 0; background: transparent; color: white; font-weight: 700; cursor: pointer; padding: 0 8px; }
+#shotPick { position: absolute; inset: 0; z-index: 80; cursor: crosshair; }
+.shot-rect { position: absolute; border: 2px dashed #f4f1ea; box-shadow: 0 0 0 9999px rgba(8, 16, 28, .35); background: transparent; pointer-events: none; }
+.shot-actions { position: absolute; display: flex; gap: 8px; z-index: 2; }
+.shot-actions .btn { cursor: pointer; }
+.shot-actions .btn.ghost { background: #f4f1ea; color: #1b2a4a; box-shadow: none; }
+#onboard.osload { background: #000; flex-direction: column; gap: 22px; }
+#onboard.osload .boot-gif { width: min(920px, 88vw); max-height: 72vh; object-fit: contain; }
+#onboard.osload.has-card { flex-direction: row; align-items: center; justify-content: center; gap: 32px; padding: 24px 36px; overflow: hidden; }
+#onboard.osload.has-card .boot-gif { width: min(420px, 38vw); max-height: 68vh; flex: 0 1 420px; }
+#onboard.osload.has-card #obCard { width: min(460px, 48vw); max-height: none; overflow: visible; flex: 0 1 460px; }
+.portal-shell { flex: 1; min-height: 0; height: 100%; display: flex; flex-direction: column; }
+.portal-shell .portal { flex: 1; min-height: 0; }
+.portal-session span { margin-right: auto; }
+.portal-session .session-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-right: 0; }
+.link-card input { width: 100%; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(27,42,74,.16); }
+.pass-code { display: grid; gap: 8px; }
+.toast-text span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.browser-frame { position: relative; min-height: 100%; display: flex; flex-direction: column; }
+.browser-choice { position: absolute; z-index: 6; top: 62px; right: 14px; width: min(280px, calc(100% - 28px)); display: grid; gap: 8px; padding: 22px 12px 12px; background: var(--paper); color: var(--ink); border-radius: 16px; box-shadow: 0 16px 40px rgba(16, 24, 40, .2); }
+.browser-choice .x { position: absolute; top: 2px; right: 8px; border: 0; background: transparent; color: var(--ink); font-size: 22px; line-height: 1; cursor: pointer; }
+.browser-choice .btn { margin: 0; }
+.debrief { overflow: auto; align-items: start; }
+.link-ask, .debrief { position: fixed; inset: 0; z-index: 80; background: rgba(10, 16, 28, .55); display: grid; place-items: center; padding: 24px; }
+.link-card, .debrief-card { width: min(560px, 100%); background: var(--paper); color: var(--ink); border-radius: 18px; padding: 22px; display: grid; gap: 10px; }
+.debrief { overflow: auto; align-items: start; }
+.debrief-card { margin: 32px auto; }
+.debrief-card h1, .debrief-card h2, .link-card h2 { margin: 0; }
+.debrief-row { display: grid; grid-template-columns: 180px 1fr; gap: 10px; margin: 0; }
+.stage-login { flex: 1; min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 28px; }
+.win-body:has(.stage-login) { display: flex; flex-direction: column; }
+.stage-login .gate { width: min(360px, 100%); text-align: left; margin-top: 8px; }
+.stage-page { padding: 28px; }
+.account-page { padding: 8px 4px 24px; display: grid; gap: 12px; align-content: start; max-width: 460px; }
+.account-page h2, .account-page h3 { margin: 0; }
+.account-form { display: grid; gap: 12px; }
+.account-field { display: grid; gap: 6px; font-size: 13px; font-weight: 650; }
+.account-form input {
+  width: 100%;
+  border: 1px solid rgba(27, 42, 74, .22);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: white;
+  font-weight: 500;
+}
+.account-form .btn { margin: 0; justify-self: start; }
+.portal nav .account-link { margin: 10px 8px 4px; font-weight: 700; }
+.gate { display: grid; gap: 10px; max-width: 360px; }
+.gate input { padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(27,42,74,.16); }
+.portal-session { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 12px; background: #e7f4f6; border-bottom: 1px solid var(--line); }
+.portal-session .btn { margin: 0; }

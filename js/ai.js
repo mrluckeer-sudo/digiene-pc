@@ -22,9 +22,11 @@
     return fetch(cfg.proxyUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+        body: JSON.stringify({
         personaId: opts.personaId,
         player: String(opts.player || "").slice(0, 24),
+        channel: opts.channel === "mail" ? "mail" : "chat",
+        note: String(opts.note || "").slice(0, 700),
         messages
       }),
       signal: ctrl.signal

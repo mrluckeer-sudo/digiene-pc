@@ -19,6 +19,7 @@
     ["vpn", "VPN", "assets/icons/icon-vpn.svg"]
   ];
 
+  const stage = window.NORD_STAGE === "1";
   root.hidden = false;
   draw();
 
@@ -57,17 +58,31 @@
     leaveBoot();
     root.className = "";
     root.replaceChildren();
+    if (stage && step <= 3) {
+      root.classList.add("osload");
+      if (step < 3) root.classList.add("has-card");
+      const gif = document.createElement("img");
+      gif.src = "assets/brand/boot.gif?v=40";
+      gif.alt = "";
+      gif.className = "boot-gif";
+      root.appendChild(gif);
+      if (step === 3) {
+        hintTimer = window.setTimeout(() => { step = 4; draw(); }, 2600);
+        return;
+      }
+    }
     const card = el("div", "obCard");
     card.id = "obCard";
     if (step === 0) screenTeaser(card);
     else if (step === 1) screenWho(card);
     else if (step === 2) screenAvatar(card);
     else if (step === 3) screenBoot(card);
+    else if (stage) screenWelcome(card);
     else if (step === 4) screenPassword(card);
     else if (step === 5) screenKey(card);
     else if (step === 6) screenApps(card);
     else screenRules(card);
-    card.appendChild(skipControl());
+    if (!stage) card.appendChild(skipControl());
     root.appendChild(card);
   }
 
@@ -78,6 +93,15 @@
   }
 
   function screenTeaser(card) {
+    if (stage) {
+      card.append(
+        el("p", "ob-kicker", "Уровень 1 · Первое утро"),
+        el("h1", "", "Твой рабочий день"),
+        el("p", "", "Имя, фамилия и аватар. Дальше компьютер включится сам."),
+        button("Получить рабочее место", () => { step = 1; draw(); })
+      );
+      return;
+    }
     card.append(
       el("p", "ob-kicker", "5 минут · только имя"),
       el("h1", "", "Твой рабочий день"),
@@ -87,11 +111,17 @@
   }
 
   function screenWho(card) {
-    card.append(el("p", "ob-kicker", "Кто ты"), el("h1", "", "Твой рабочий день"), el("p", "", "Отметь всё, что подходит. Роль можно сменить позже."));
+    card.append(el("p", "ob-kicker", "Кто ты"), el("h1", "", stage ? "Как к вам обращаться" : "Твой рабочий день"), el("p", "", stage ? "Имя и фамилия попадут в логин портала." : "Отметь всё, что подходит. Роль можно сменить позже."));
     const name = document.createElement("input");
     name.placeholder = "Имя";
     name.value = state.name;
     name.style.cssText = "width:100%;margin:8px 0 12px;padding:10px 12px;border-radius:12px;border:1px solid rgba(27,42,74,.12)";
+    const surname = document.createElement("input");
+    if (stage) {
+      surname.placeholder = "Фамилия";
+      surname.value = state.surname || "";
+      surname.style.cssText = name.style.cssText;
+    }
     const box = el("div", "choices");
     ROLES.forEach(([id, title]) => {
       const label = el("label", "choice");
@@ -102,10 +132,14 @@
       label.append(input, el("span", "", title));
       box.appendChild(label);
     });
+    const nameNote = el("p", "quiet", "");
     const next = button("Дальше", () => {
       const roles = [...box.querySelectorAll("input:checked")].map((input) => input.value);
-      if (!name.value.trim() || !roles.length) return;
+      const nameOk = stage ? validName(name.value) : !!name.value.trim();
+      const surnameOk = !stage || validName(surname.value);
+      if (!nameOk || !surnameOk || !roles.length) return;
       state.name = name.value.trim();
+      if (stage) state.surname = surname.value.trim();
       state.roles = roles;
       persist();
       paintWho();
@@ -113,12 +147,33 @@
       draw();
     });
     function sync() {
-      next.disabled = !name.value.trim() || !box.querySelector("input:checked");
+      const nameOk = stage ? validName(name.value) : !!name.value.trim();
+      const surnameOk = !stage || validName(surname.value);
+      next.disabled = !nameOk || !surnameOk || !box.querySelector("input:checked");
+      if (!stage) return;
+      const dirty = name.value.trim() || surname.value.trim();
+      nameNote.textContent = dirty && (!nameOk || !surnameOk) ? "Имя и фамилия — только буквы, не короче двух." : "";
     }
     name.addEventListener("input", sync);
+    if (stage) surname.addEventListener("input", sync);
     box.addEventListener("change", sync);
-    card.append(name, box, next);
+    card.append(name, stage ? surname : "", stage ? nameNote : "", box, next);
     sync();
+  }
+
+  function validName(value) {
+    const text = String(value || "").trim();
+    if (!/^[A-Za-zА-Яа-яЁё]+(?:-[A-Za-zА-Яа-яЁё]+)*$/.test(text)) return false;
+    return text.replace(/-/g, "").length >= 2;
+  }
+
+  function screenWelcome(card) {
+    const who = [state.name, state.surname].filter(Boolean).join(" ");
+    card.append(
+      el("p", "ob-kicker", "НОРД"),
+      el("h1", "", `${who}, добро пожаловать`),
+      button("К рабочему столу", complete)
+    );
   }
 
   function screenBoot(card) {
@@ -286,6 +341,10 @@
     leaveBoot();
     root.hidden = true;
     root.replaceChildren();
+    if (stage && window.Stage1) {
+      Stage1.begin();
+      return;
+    }
     window.setTimeout(() => {
       desk.toast({
         app: "messenger",

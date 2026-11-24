@@ -33,7 +33,7 @@ jobs:
           rm -rf "$DIST_DIR"
           mkdir -p "$DIST_DIR"
           cp index.html "$DIST_DIR/"
-          cp -R css js assets "$DIST_DIR/"
+          cp -R css js assets stage-1 "$DIST_DIR/"
           python3 -c 'import json,os; proxy=os.environ.get("YC_AI_PROXY_URL","").strip(); open("dist/config.js","w",encoding="utf-8").write("window.NORD_AI="+json.dumps({"provider":"yandex","proxyUrl":proxy,"enabled":bool(proxy)},ensure_ascii=False)+";\n"); print("config.js enabled="+str(bool(proxy)).lower())'
           find "$DIST_DIR" -type f | sort
 

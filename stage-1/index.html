@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base href="/">
+  <title>НОРД — первое утро</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="css/desktop.css?v=47">
+</head>
+<body>
+  <div id="desk">
+    <div id="icons"></div>
+    <div id="windows"></div>
+    <aside id="tray" hidden>
+      <h2>Уведомления</h2>
+      <div id="noteList"></div>
+    </aside>
+    <div id="preview" hidden></div>
+    <div id="toasts"></div>
+    <div id="onboard" hidden></div>
+    <div id="menu" hidden></div>
+    <div id="pop" hidden></div>
+    <footer id="bar">
+      <div class="brand">
+        <img src="assets/brand/logo-mark.png" alt="">
+        <span>НОРД</span>
+      </div>
+      <div id="tasks"></div>
+      <button id="shot" type="button">Снимок</button>
+      <button id="endStage" type="button">Завершить</button>
+      <button id="vpnStat" type="button">VPN</button>
+      <button id="bell" type="button" aria-label="Уведомления">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9a6 6 0 1 1 12 0c0 4 1.5 5.5 1.5 5.5H4.5S6 13 6 9Z"/><path d="M10 18a2 2 0 0 0 4 0"/></svg>
+        <i id="bellBadge">2</i>
+      </button>
+      <button id="who" type="button">
+        <span id="whoMark">С</span>
+        <span id="whoName">Сотрудник</span>
+      </button>
+      <div class="clock">
+        <b id="clock">--:--</b>
+        <span id="date"></span>
+      </div>
+    </footer>
+  </div>
+  <script>window.NORD_STAGE = "1";</script>
+  <script src="config.js?v=47"></script>
+  <script src="config.local.js?v=47"></script>
+  <script src="js/desktop.js?v=47"></script>
+  <script src="js/stage1.js?v=47"></script>
+  <script src="js/onboard.js?v=47"></script>
+  <script src="js/ai.js?v=47"></script>
+  <script src="js/workplace.js?v=47"></script>
+</body>
+</html>

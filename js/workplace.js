@@ -36,7 +36,9 @@
   }
 
   function me() {
-    return { name: state.name.trim() || "Вы", email: ME.email };
+    const name = [state.name, state.surname].filter((part) => part && String(part).trim()).join(" ").trim();
+    const email = window.NORD_STAGE === "1" && state.stage && state.stage.login ? `${state.stage.login}@nord.example` : ME.email;
+    return { name: name || "Вы", email };
   }
 
   function nowStamp() {
@@ -141,6 +143,13 @@
     wrapBadges();
     state.browse.cols = (state.browse.cols || []).filter((id) => state.nodes[id] && state.nodes[id].type !== "file");
     if (!state.browse.cols.length) state.browse.cols = ["docs"];
+    if (window.NORD_STAGE === "1" && window.Stage1) {
+      if (!CONTACTS.some((person) => person.email === "it-support@nord.example")) {
+        CONTACTS.push({ dept: "IT", name: "Поддержка IT", email: "it-support@nord.example", avatar: "assets/people/man_4.png" });
+      }
+      DM_PEOPLE.ilya = { name: "Илья Фомин", role: "IT", city: "—", avatar: "" };
+      Stage1.prepare();
+    }
     renderDesk();
     Desk.applyIcons();
     Desk.refreshBadges();
@@ -442,7 +451,7 @@
     const meet = new Date(Date.now() + 18 * 60000);
     meet.setSeconds(0, 0);
     const meetEnd = new Date(meet.getTime() + 30 * 60000);
-    return [
+    const events = [
       {
         id: "evt_001",
         title: "Планёрка проектного офиса",
@@ -483,6 +492,8 @@
         inviteStatus: null
       }
     ];
+    if (window.NORD_STAGE === "1") return events.filter((event) => event.id !== "evt_003");
+    return events;
   }
 
   function logEvent(action, data) {
@@ -1019,6 +1030,7 @@
   }
 
   function dmSeed(id) {
+    if (window.NORD_STAGE === "1") return [];
     const lines = {
       misha: [{ id: "dm-misha", who: "misha", text: "Глянь почту. Там срочное от директора. Я бы сам не платил, пока реквизиты не сверены.", at: "09:05" }],
       director: [{ id: "dm-dir", who: "director", text: "На связи буду урывками. Если что — пиши Павлу.", at: "08:40" }],
@@ -1120,7 +1132,10 @@
     state.seen[id] = chatLines(id).length;
     persist();
     paintMsgBadge();
-    if (!isChannel(id) && !isRude(line.text)) scheduleReply(id, dmReply(id, line.text));
+    if (!isChannel(id) && !isRude(line.text)) {
+      if (window.NORD_STAGE === "1" && window.Stage1 && Stage1.handleChat(id, line)) return;
+      scheduleReply(id, dmReply(id, line.text));
+    }
   }
 
   function isRude(text) {
@@ -1146,7 +1161,13 @@
     };
     paintTyping();
     const deliver = (text) => {
-      const clean = String(text || "").trim() || scripted;
+      let clean = String(text || "").trim() || scripted;
+      if (window.NORD_STAGE === "1" && state.name) {
+        const said = (state.chat[id] || []).some((line) => line.who === id);
+        if (!said && !clean.toLowerCase().includes(String(state.name).toLowerCase())) {
+          clean = `${state.name}, здравствуйте. ${clean}`;
+        }
+      }
       const wait = Math.max(0, 1200 + Math.min(800, clean.length * 12) - (Date.now() - started));
       window.setTimeout(() => {
         const pack = state.chat[id] || (state.chat[id] = []);
@@ -1164,7 +1185,13 @@
       deliver(scripted);
       return;
     }
-    NordAI.reply({ personaId: id, player: state.name, messages: chatHistory(id) }).then((res) => {
+    NordAI.reply({
+      personaId: id,
+      player: state.name,
+      channel: "chat",
+      note: window.NORD_STAGE === "1" && window.Stage1 && Stage1.note ? Stage1.note(id) : "",
+      messages: chatHistory(id)
+    }).then((res) => {
       if (res && res.ignore) {
         window.setTimeout(() => {
           state.typing[id] -= 1;
@@ -1185,7 +1212,8 @@
     if (id === "it") return "Если файл пришёл письмом и называется обновлением — не запускай. Хватит портала.";
     if (id === "hr") return "Номер карты в письме лучше не оставлять. Нужная форма уже есть на портале.";
     if (id === "director") return "Сообщение дойдёт, когда появится сеть. С оплатой лучше дождаться сверки.";
-    if (id === "security") return "Опишите, что произошло: от кого сообщение и что в нём просили. Пароль и код подтверждения сюда не пишите.";
+    if (id === "security") return "Опишите, что произошло: от кого сообщение и что в нём просили. Пароль и код подтверждения сюда не пишите. Если уже открывали ссылку, напишите, что было на странице.";
+    if (id === "ilya") return "Я из IT, отдел доступа. Проверка до конца дня, через портал сейчас долго. Пришли последний код из письма, я сверю его с логом и отпишусь.";
     return "Если это была ссылка, лучше перескажи своими словами. Я открою сама, только когда пойму, от кого она.";
   }
 
@@ -1230,6 +1258,7 @@
     });
     scroll.appendChild(el("p", "slack-label", "Личные"));
     Object.keys(DM_PEOPLE).filter((id) => {
+      if (window.NORD_STAGE === "1" && id === "ilya" && (!state.stage || state.stage.ilyaPhase === "none")) return false;
       const person = DM_PEOPLE[id];
       return !query || person.name.toLowerCase().includes(query) || person.role.toLowerCase().includes(query);
     }).forEach((id) => {
@@ -1910,7 +1939,8 @@
     view.appendChild(meta("Когда", letter.stamp));
     letter.thread.forEach((part) => {
       const block = el("div", "chain");
-      block.append(el("b", "", part.author), el("p", "meta", `${part.email} · ${part.stamp}`), el("p", "", part.text));
+      block.append(el("b", "", part.author), el("p", "meta", `${part.email} · ${part.stamp}`));
+      block.appendChild(window.NORD_STAGE === "1" && window.Stage1 ? Stage1.richText(part.text) : el("p", "", part.text));
       view.appendChild(block);
     });
     letter.files.forEach((id) => {
@@ -1976,6 +2006,7 @@
   }
 
   function offerVpnCoach() {
+    if (window.NORD_STAGE === "1" && !(state.stage && state.stage.vpnSent)) return;
     state.guides = state.guides || {};
     const vpn = state.vpn || {};
     if (vpn.code === VPN_INVITE && vpn.on) {
@@ -1995,7 +2026,9 @@
       onClick: () => {
         if (state.guides.vpnSetup === "done") return;
         state.guides.vpnSetup = "code";
+        state.chatOpen = "it";
         persist();
+        Desk.openApp("messenger");
         watchCoach();
       }
     });
@@ -2013,12 +2046,22 @@
     persist();
     if (state.guides.vpnSetup === "done") {
       clearCoach();
-      if (coachStep()) watchCoach();
+      if (state.guides.payQueued) {
+        state.guides.payQueued = false;
+        state.guides.payInvited = false;
+        persist();
+        offerPayCoach();
+      } else if (coachStep()) watchCoach();
     } else placeCoach();
   }
 
   function offerPayCoach() {
     if (coachStep() || state.guides.payInvoice === "done" || state.guides.payInvited) return;
+    if (window.NORD_STAGE === "1" && vpnCoachStep()) {
+      state.guides.payQueued = true;
+      persist();
+      return;
+    }
     state.guides.payInvited = true;
     persist();
     Desk.toast({
@@ -2421,9 +2464,30 @@
   }
 
   function paintPortal(body) {
-    const shell = el("div", "portal");
+    if (window.NORD_STAGE === "1" && window.Stage1 && state.stage && !state.stage.portalIn) {
+      Stage1.paintLogin(body);
+      return;
+    }
+    const shell = el("div", "portal-shell");
+    const grid = el("div", "portal");
     const nav = document.createElement("nav");
     const yours = (state.roles || []).includes("finance") ? "Финансы" : "Общее";
+    const account = el("button", state.portalSection === "account" ? "on account-link" : "account-link", "Аккаунт");
+    account.type = "button";
+    account.addEventListener("click", () => {
+      state.portalSection = "account";
+      Desk.paint("portal");
+    });
+    if (window.NORD_STAGE === "1") {
+      nav.appendChild(account);
+      const journal = el("button", state.portalSection === "journal" ? "on account-link" : "account-link", "Журнал");
+      journal.type = "button";
+      journal.addEventListener("click", () => {
+        state.portalSection = "journal";
+        Desk.paint("portal");
+      });
+      nav.appendChild(journal);
+    }
     portalGroups().forEach(([group, items]) => {
       nav.appendChild(el("p", "group", group === yours ? `${group} · ваш` : group));
       items.forEach(([id, title]) => {
@@ -2455,8 +2519,11 @@
       updates: updatesPage,
       hr: hrPage
     };
-    page.appendChild((pages[state.portalSection] || payPage)());
-    shell.append(nav, page);
+    if (window.NORD_STAGE === "1" && state.portalSection === "account" && window.Stage1) page.appendChild(Stage1.paintAccount());
+    else if (window.NORD_STAGE === "1" && state.portalSection === "journal" && window.Stage1) page.appendChild(Stage1.paintJournal());
+    else page.appendChild((pages[state.portalSection] || payPage)());
+    grid.append(nav, page);
+    shell.appendChild(grid);
     body.appendChild(shell);
     if (coachStep() === "portal") coachDone("portal");
   }
@@ -2649,7 +2716,7 @@
   function peopleExceptMe(letter) {
     const seen = new Set();
     return [letter.from, ...letter.to, ...letter.cc].filter((person) => {
-      if (!person || person.email === ME.email || seen.has(person.email)) return false;
+      if (!person || person.email === me().email || seen.has(person.email)) return false;
       seen.add(person.email);
       return true;
     });
@@ -2810,9 +2877,11 @@
       subject: compose.subject || "(без темы)",
       stamp,
       files: compose.files.slice(),
-      thread: [{ author: author.name, email: author.email, stamp, text: compose.quote ? `${compose.body}\n\n${compose.quote}` : compose.body }]
+      thread: [{ author: author.name, email: author.email, stamp, text: compose.quote ? `${compose.body}\n\n${compose.quote}` : compose.body }],
+      replyTo: (compose.kind === "reply" || compose.kind === "all") ? compose.letterId : ""
     };
     state.letters.unshift(outgoing);
+    if (window.Stage1) Stage1.onSent(outgoing);
     state.mailUi.folder = "sent";
     state.mailUi.letter = outgoing.id;
     state.mailUi.mode = "read";
@@ -2890,6 +2959,7 @@
     window.addEventListener("pointerup", up);
   }
 
+  window.NordCoach = { vpn: offerVpnCoach, pay: offerPayCoach };
   window.Workplace = { paint, dress, boot };
   boot();
 }());

@@ -4,7 +4,7 @@
  * Ключ в ответ и в логи не пишется.
  * Функцию не делать публичной: её вызывает только API Gateway.
  */
-const MODEL = 'yandexgpt-5-lite';
+const MODEL = 'yandexgpt-5.1';
 const ALLOWED = new Set([
   'https://digiene-pc.website.yandexcloud.net'
 ]);
@@ -17,7 +17,7 @@ function loadText(rel){
 }
 
 const CULTURE = loadText('prompts/culture.md');
-const PEOPLE = ['misha', 'director', 'assistant', 'colleague', 'it', 'hr', 'security'];
+const PEOPLE = ['misha', 'director', 'assistant', 'colleague', 'it', 'hr', 'security', 'support', 'ilya', 'oleg'];
 const PERSONAS = {};
 PEOPLE.forEach(id => { PERSONAS[id] = loadText('prompts/people/' + id + '.md'); });
 
@@ -29,7 +29,10 @@ const SPEAKER = {
   colleague: 'Марина',
   it: 'Сергей',
   hr: 'Ольга',
-  security: 'Кирилл'
+  security: 'Кирилл',
+  support: 'Поддержка',
+  ilya: 'Илья',
+  oleg: 'Олег'
 };
 
 function isRude(text){
@@ -42,7 +45,7 @@ function safePlayer(raw){
   return /^[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё \-]{0,23}$/.test(s) ? s : 'Сотрудник';
 }
 
-function facts(personaId, player){
+function facts(personaId, player, note, channel){
   const lines = [
     'Факты, только они:',
     'компания: НОРД',
@@ -55,13 +58,18 @@ function facts(personaId, player){
   if (personaId === 'it') lines.push('инвайт-код VPN, который ты уже прислал: NORD-VPN-19');
   if (personaId === 'director') lines.push('ты в пути и на связи урывками');
   if (personaId === 'assistant') lines.push('директор просила не беспокоить её в полёте, оплату сверяешь сам');
-  if (personaId === 'colleague') lines.push('ты на планёрке в 10:00');
-  lines.push('Ответь на последнюю реплику. Числа и роли бери только из этого списка.');
+  if (personaId === 'colleague') lines.push('ты просила сверить контрагента «Северный контур» и оплатить счёт УЧ-1042 на портале');
+  const cleanNote = String(note || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 700);
+  if (cleanNote) lines.push('ситуация, ей верь, если она точнее общих фактов: ' + cleanNote);
+  lines.push(channel === 'mail'
+    ? 'Это ответ в той же почтовой переписке. Два–четыре предложения, без темы и подписи.'
+    : 'Это ответ в мессенджере. Два–четыре предложения.');
+  lines.push('Ответь на последнюю реплику. Числа и роли бери из этого списка и из переписки.');
   return lines.join('\n');
 }
 
 function cleanLine(text){
-  return String(text || '').trim().replace(/^(?:(?:миша|ирина|павел|марина|сергей|ольга|кирилл)\s*:\s*)+/i, '').trim();
+  return String(text || '').trim().replace(/^(?:(?:миша|ирина|павел|марина|сергей|ольга|кирилл|илья|олег|поддержка)\s*:\s*)+/i, '').trim();
 }
 
 function transcript(personaId, messages){
@@ -134,9 +142,9 @@ module.exports.handler = async function(event){
       },
       body: JSON.stringify({
         modelUri: 'gpt://' + folder + '/' + MODEL + '/latest',
-        completionOptions: { stream: false, temperature: 0.5, maxTokens: '140' },
+        completionOptions: { stream: false, temperature: 0.5, maxTokens: '360' },
         messages: [
-          { role: 'system', text: persona + '\n' + CULTURE + '\n' + facts(body.personaId, player) },
+          { role: 'system', text: persona + '\n' + CULTURE + '\n' + facts(body.personaId, player, body.note, body.channel) },
           { role: 'user', text: dialog }
         ]
       })
@@ -144,7 +152,14 @@ module.exports.handler = async function(event){
   } catch (e) {
     return reply(502, headers, { error: 'Модель недоступна' });
   }
-  if (!upstream.ok) return reply(502, headers, { error: 'Модель ответила ошибкой' });
+  if (!upstream.ok) {
+    let detail = '';
+    try {
+      const errBody = await upstream.json();
+      detail = String((errBody.error && (errBody.error.message || errBody.error)) || errBody.message || '').replace(/\s+/g, ' ').slice(0, 180);
+    } catch (e) {}
+    return reply(502, headers, { error: 'Модель ответила ошибкой ' + upstream.status + (detail ? ': ' + detail : '') });
+  }
   const data = await upstream.json();
   const text = (((data.result || {}).alternatives || [])[0] || {}).message;
   const out = cleanLine(text && text.text).slice(0, 400);
