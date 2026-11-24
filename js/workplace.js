@@ -1135,7 +1135,9 @@
     if (!isChannel(id) && !isRude(line.text)) {
       if (window.NORD_STAGE === "1" && window.Stage1 && Stage1.handleChat(id, line)) return;
       scheduleReply(id, dmReply(id, line.text));
+      return;
     }
+    if (isChannel(id) && window.NORD_STAGE === "1" && window.Stage1 && Stage1.handleChannel) Stage1.handleChannel(id, line);
   }
 
   function isRude(text) {
@@ -1329,7 +1331,10 @@
     const main = el("div", "slack-main");
     const head = el("div", "slack-head");
     const status = channel ? channel.topic : (state.typing && state.typing[id] ? "печатает…" : person.role);
-    head.append(el("b", "", channel ? `# ${channel.title}` : person.name), el("p", status === "печатает…" ? "typing-status" : "quiet", status));
+    if (person) head.appendChild(portrait(person, "head-ava"));
+    const title = el("div", "");
+    title.append(el("b", "", channel ? `# ${channel.title}` : person.name), el("p", status === "печатает…" ? "typing-status" : "quiet", status));
+    head.appendChild(title);
     const log = el("div", "slack-log");
     chatLines(id).forEach((line) => log.appendChild(messageRow(id, line)));
     const form = el("form", "slack-compose");
@@ -1474,6 +1479,16 @@
     return frag;
   }
 
+  function portrait(person, cls) {
+    if (person.avatar) {
+      const photo = img(person.avatar);
+      photo.className = cls;
+      photo.alt = "";
+      return photo;
+    }
+    return el("span", `${cls} msg-ava`, (person.name || "Н").slice(0, 1));
+  }
+
   function chatAbout() {
     const aside = el("aside", "slack-about");
     const id = state.chatOpen;
@@ -1486,6 +1501,7 @@
       return aside;
     }
     const person = DM_PEOPLE[id];
+    aside.appendChild(portrait(person, "about-ava"));
     aside.append(el("h2", "", person.name), el("p", "", person.role), el("p", "k", "Город"), el("p", "", person.city));
     const contact = CONTACTS.find((item) => DM_EMAIL[item.email] === id);
     if (contact) aside.append(el("p", "k", "Почта"), el("p", "", contact.email));
@@ -1851,8 +1867,86 @@
     Desk.openApp("mail");
   }
 
+  function folderOf(letter, folder) {
+    if (!letter) return false;
+    if (folder === "drafts" || folder === "spam" || folder === "trash") return letter.folder === folder;
+    if (letter.folder === "drafts" || letter.folder === "spam" || letter.folder === "trash") return false;
+    const boxes = letter.boxes || [letter.folder];
+    return boxes.includes(folder);
+  }
+
+  function lettersIn(folder) {
+    return (state.letters || []).filter((letter) => folderOf(letter, folder));
+  }
+
+  function normalizeMail() {
+    const mine = me().email;
+    let dirty = false;
+    (state.letters || []).forEach((letter) => {
+      if (!letter || letter.folder === "drafts" || letter.folder === "spam" || letter.folder === "trash") return;
+      if (!letter.boxes) {
+        letter.boxes = [letter.folder === "sent" ? "sent" : "inbox"];
+        dirty = true;
+      }
+    });
+    const copies = (state.letters || []).filter((letter) => letter.replyTo);
+    copies.forEach((copy) => {
+      const parent = state.letters.find((item) => item.id === copy.replyTo);
+      if (!parent || parent.folder === "trash" || parent.folder === "spam") return;
+      (copy.thread || []).forEach((part) => {
+        const same = (parent.thread || []).some((item) => item.email === part.email && item.text === part.text);
+        if (!same) {
+          parent.thread.push(part);
+          dirty = true;
+        }
+      });
+      const next = Array.from(new Set([...(parent.boxes || ["inbox"]), "inbox", "sent"]));
+      if (next.length !== (parent.boxes || []).length) dirty = true;
+      parent.boxes = next;
+      if (!copy.read && parent.read) {
+        parent.read = false;
+        dirty = true;
+      }
+    });
+    if (copies.length) {
+      const drop = new Set(copies.filter((copy) => state.letters.some((item) => item.id === copy.replyTo)).map((copy) => copy.id));
+      if (drop.size) {
+        state.letters = state.letters.filter((letter) => !drop.has(letter.id));
+        dirty = true;
+      }
+    }
+    (state.letters || []).forEach((letter) => {
+      if (!letter || letter.folder === "drafts" || letter.folder === "spam" || letter.folder === "trash") return;
+      const incoming = (letter.thread || []).some((part) => part.email && part.email !== mine);
+      const outgoing = (letter.thread || []).some((part) => part.email === mine);
+      const before = (letter.boxes || []).join(",");
+      letter.boxes = letter.boxes || [];
+      if (incoming && !letter.boxes.includes("inbox")) letter.boxes.push("inbox");
+      if (outgoing && !letter.boxes.includes("sent")) letter.boxes.push("sent");
+      if (!letter.boxes.length) letter.boxes = [letter.folder === "sent" ? "sent" : "inbox"];
+      if (letter.boxes.join(",") !== before) dirty = true;
+    });
+    if (dirty) persist();
+  }
+
+  window.NordMail = {
+    unread() {
+      normalizeMail();
+      return lettersIn("inbox").filter((letter) => !letter.read).length;
+    }
+  };
+
   function paintMail(body) {
+    normalizeMail();
     const ui = state.mailUi;
+    if (ui.view === "mail" && ui.mode !== "compose") {
+      const open = (state.letters || []).find((letter) => letter.id === ui.letter);
+      if (open && !open.read && folderOf(open, "inbox")) {
+        open.read = true;
+        persist();
+        Desk.refreshBadges();
+      }
+    }
     const composing = ui.view === "mail" && ui.mode === "compose";
     const shell = el("div", `mail-shell${ui.view === "contacts" || composing ? " wide" : ""}`);
     shell.appendChild(folderRail());
@@ -1874,13 +1968,17 @@
     rail.appendChild(write);
     [["inbox", "Входящие"], ["sent", "Отправленные"], ["drafts", "Черновики"], ["spam", "Спам"], ["trash", "Удалённые"]].forEach(([id, title]) => {
       const count = id === "inbox"
-        ? state.letters.filter((letter) => letter.folder === "inbox" && !letter.read).length
-        : id === "drafts"
-          ? state.letters.filter((letter) => letter.folder === "drafts").length
-          : 0;
+        ? lettersIn("inbox").filter((letter) => !letter.read).length
+        : id === "sent"
+          ? lettersIn("sent").length
+          : id === "drafts"
+            ? lettersIn("drafts").length
+            : 0;
       const reading = state.mailUi.view === "mail" && state.mailUi.mode !== "compose" && state.mailUi.folder === id;
-      const button = el("button", reading ? "on" : "", count ? `${title} · ${count}` : title);
+      const button = el("button", reading ? "on" : "");
       button.type = "button";
+      button.appendChild(el("span", "", title));
+      if (count) button.appendChild(el("span", "count", String(count)));
       button.addEventListener("click", () => openFolder(id));
       rail.appendChild(button);
     });
@@ -1896,10 +1994,16 @@
 
   function letterList() {
     const list = el("div", "list");
-    state.letters.filter((letter) => letter.folder === state.mailUi.folder).forEach((letter) => {
-      const button = el("button", `row${letter.id === state.mailUi.letter ? " on" : ""}${letter.read ? "" : " unread"}`);
+    const mine = me().email;
+    lettersIn(state.mailUi.folder).forEach((letter) => {
+      const last = (letter.thread || [])[letter.thread.length - 1];
+      const who = state.mailUi.folder === "sent"
+        ? (letter.to || []).map((person) => person.name).join(", ") || "Без адресата"
+        : ((letter.thread || []).slice().reverse().find((part) => part.email && part.email !== mine) || {}).author || letter.from.name;
+      const unread = state.mailUi.folder === "inbox" && !letter.read;
+      const button = el("button", `row${letter.id === state.mailUi.letter ? " on" : ""}${unread ? " unread" : ""}`);
       button.type = "button";
-      button.append(el("b", "", letter.from.name), el("span", "sub", letter.subject), el("small", "", letter.stamp));
+      button.append(el("b", "", who), el("span", "sub", letter.subject), el("small", "", last ? String(last.text || "").replace(/\s+/g, " ").trim() : letter.stamp));
       button.addEventListener("click", () => {
         if (letter.folder === "drafts") {
           editDraft(letter);
@@ -1916,7 +2020,8 @@
   }
 
   function currentLetter() {
-    return state.letters.find((letter) => letter.id === state.mailUi.letter && letter.folder === state.mailUi.folder) || state.letters.find((letter) => letter.folder === state.mailUi.folder);
+    const rows = lettersIn(state.mailUi.folder);
+    return rows.find((letter) => letter.id === state.mailUi.letter) || rows[0];
   }
 
   function letterView() {
@@ -2859,35 +2964,44 @@
     if (!compose.to.length || (!compose.body.trim() && !compose.files.length)) return;
     const author = me();
     const stamp = nowStamp();
+    let conversation = null;
     if (compose.kind === "reply" || compose.kind === "all") {
-      const letter = state.letters.find((item) => item.id === compose.letterId);
-      if (letter) {
-        letter.thread.push({ author: author.name, email: author.email, stamp, text: compose.body });
-        if (letter.id === "director" && agrees(compose.body)) Desk.addLedger("dir-reply", "В ответе согласились заняться оплатой.", 1);
+      conversation = state.letters.find((item) => item.id === compose.letterId) || null;
+      if (conversation) {
+        conversation.thread.push({ author: author.name, email: author.email, stamp, text: compose.body });
+        conversation.boxes = Array.from(new Set([...(conversation.boxes || [conversation.folder]), "sent"]));
+        if (conversation.id === "director" && agrees(compose.body)) Desk.addLedger("dir-reply", "В ответе согласились заняться оплатой.", 1);
       }
     }
+    if (!conversation) {
+      conversation = {
+        id: uid("mail"),
+        folder: "sent",
+        boxes: ["sent"],
+        read: true,
+        from: author,
+        to: compose.to.slice(),
+        cc: compose.cc.slice(),
+        subject: compose.subject || "(без темы)",
+        stamp,
+        files: compose.files.slice(),
+        thread: [{ author: author.name, email: author.email, stamp, text: compose.body }]
+      };
+      state.letters.unshift(conversation);
+    }
     if (compose.draftId) state.letters = state.letters.filter((letter) => letter.id !== compose.draftId);
-    const outgoing = {
-      id: uid("mail"),
-      folder: "sent",
-      read: true,
-      from: author,
-      to: compose.to.slice(),
-      cc: compose.cc.slice(),
-      subject: compose.subject || "(без темы)",
-      stamp,
-      files: compose.files.slice(),
-      thread: [{ author: author.name, email: author.email, stamp, text: compose.quote ? `${compose.body}\n\n${compose.quote}` : compose.body }],
-      replyTo: (compose.kind === "reply" || compose.kind === "all") ? compose.letterId : ""
-    };
-    state.letters.unshift(outgoing);
-    if (window.Stage1) Stage1.onSent(outgoing);
-    state.mailUi.folder = "sent";
-    state.mailUi.letter = outgoing.id;
+    if (window.Stage1) Stage1.onSent(conversation);
+    const boxes = conversation.boxes || [conversation.folder];
+    if (!boxes.includes(state.mailUi.folder) || state.mailUi.folder === "drafts") {
+      state.mailUi.folder = boxes.includes("inbox") ? "inbox" : "sent";
+    }
+    state.mailUi.letter = conversation.id;
     state.mailUi.mode = "read";
+    state.mailUi.view = "mail";
     state.mailUi.compose = null;
     persist();
     Desk.paint("mail");
+    Desk.refreshBadges();
   }
 
   function agrees(text) {

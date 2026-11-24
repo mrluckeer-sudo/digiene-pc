@@ -457,7 +457,7 @@
       addTrail("file", "Скачан файл клиентов", "С учётной записи скачан файл с данными клиентов. Вход перед этим был подтверждён кодом из письма.");
       directorNote("file-ask", "Файл с клиентами", `${whoName()}, с вашей учётной записи скачали файл с данными клиентов. Если код подтверждения ушёл не вам, почему его передали? Опишите, кому писали и что открывали. Это уже последствия, не черновик.`);
     }
-    const quiet = row.phishAt && !row.phishIn && !row.codeSent && !row.contactedSupport && !row.contactedKirill;
+    const quiet = row.phishAt && !row.phishIn && !row.codeSent && !row.reported && !row.contactedSupport && !row.contactedKirill;
     const ilyaSettled = row.passwordRank === "temp" || row.ilyaPhase === "left" || row.ilyaPhase === "refused" || row.ilyaPhase === "got";
     if (quiet && ilyaSettled && !row.nudgeAt && now - row.lastAction > 240000) {
       row.nudgeAt = now;
@@ -465,7 +465,7 @@
       pushChat("security", line);
       chatToast("security", "Кирилл Антонов", line, "assets/people/man_2.png");
     }
-    if (row.nudgeAt && !row.contactedKirill && !row.contactedSupport && now - row.nudgeAt > 120000) row.silence = true;
+    if (row.nudgeAt && !row.reported && !row.contactedKirill && !row.contactedSupport && now - row.nudgeAt > 120000) row.silence = true;
     const heardAfter = (row.supportAnsweredAt || 0) > row.phishAt || (row.kirillAnsweredAt || 0) > row.phishAt;
     const clean = row.phishAt && !row.phishIn && !row.codeSent && ilyaSettled && heardAfter;
     if (clean) row.clean = true;
@@ -495,10 +495,9 @@
     });
     card.appendChild(el("h2", "", "Куда можно было написать"));
     const channels = [
-      ["Поддержка it-support", row.contactedSupport ? "Подтвердили, что таких сотрудников в IT нет." : "Письмо не отправляли."],
-      ["Кирилл Антонов", row.contactedKirill ? "Спросил, что уже отправили, и объяснил правило про код." : "В информационную безопасность не писали."],
-      ["Ответ Олегу Березину", row.phishAnswered ? "Ответил сам автор письма и снова прислал ссылку." : "На фишинговое письмо не отвечали."],
-      ["Молчание", reason === "silence" ? "На предупреждение Кирилла не ответили." : "Сообщить о странном письме — тоже действие."]
+      ["Репорт", row.reported ? `Сообщили: ${row.reportVia}.` : "В IT или информационную безопасность не написали."],
+      ["Куда засчитывается", "Почта it-support, Сергея или Кирилла, личные сообщения им или канал #it."],
+      ["Ответ Олегу Березину", row.phishAnswered ? "Ответил сам автор письма и снова прислал ссылку." : "На фишинговое письмо не отвечали."]
     ];
     channels.forEach(([name, text]) => {
       const line = el("p", "debrief-row");
@@ -511,7 +510,7 @@
       ["Гигиена канала", row.portalVpn ? "Да" : "Нет"],
       ["Распознавание фишинга", row.phishIn ? "Нет" : "Да"],
       ["Социальная инженерия", row.codeSent ? "Нет" : "Да"],
-      ["Коммуникация", row.contactedSupport || row.contactedKirill ? "Да" : "Нет"],
+      ["Коммуникация", row.reported ? "Да" : "Нет"],
       ["Восстановление", row.phishIn || row.codeSent ? (row.recovered ? "Да" : "Нет") : "Не потребовалось"]
     ];
     skills.forEach(([name, value]) => {
@@ -826,14 +825,33 @@
     return String(text || "").replace(/\D/g, "").includes(code);
   }
 
+  const REDIRECT = "Это нужно сообщить специалистам IT или информационной безопасности: Сергею Плотникову, Кириллу Антонову, на it-support@nord.example или в канал #it. Я этот вопрос не закрою.";
+  const OFFICIAL_MAIL = new Set([SUPPORT, "s.plotnikov@nord.example", "k.antonov@nord.example"]);
+
+  function looksLikeReport(text, files) {
+    if (files && files.length) return true;
+    const s = String(text || "").toLowerCase().replace(/ё/g, "е");
+    return /мошен|фиш|подозр|странн|олег|илья|берет?зин|фомин|код подтвер|просит код|просит парол|nord-portal|не сотрудник|не из компан|не из it|взлом|поддел|чуж(ой|ая|ие)|скачал|заявк|инцидент|репорт|сообщить|безопасн|ссылк/.test(s);
+  }
+
+  function noteReport(via) {
+    const row = scene();
+    row.reported = true;
+    if (!row.reportVia) row.reportVia = via;
+    if (via === "it-support") row.contactedSupport = true;
+    if (via === "Кирилл Антонов") {
+      row.contactedKirill = true;
+      row.kirillAnswered = true;
+      row.kirillAnsweredAt = Date.now();
+    }
+    persist();
+  }
+
   function handleChat(id, line) {
     touch();
     const text = String(line.text || "");
     const row = scene();
-    if (BUSY.has(id)) {
-      window.setTimeout(() => pushChat(id, `${hello(id)}Я на совещании, напишу позже.`), 900);
-      return true;
-    }
+    const report = looksLikeReport(text, line.files);
     if (id === "ilya") {
       if (looksLikeCode(text)) {
         row.codeSent = true;
@@ -850,14 +868,65 @@
       }
       return false;
     }
-    if (id === "security") {
-      row.contactedKirill = true;
-      row.kirillAnswered = true;
-      row.kirillAnsweredAt = Date.now();
-      persist();
+    if (id === "it" || id === "security") {
+      if (report) noteReport(id === "it" ? "Сергей Плотников" : "Кирилл Антонов");
+      if (id === "security") {
+        row.kirillAnswered = true;
+        row.kirillAnsweredAt = Date.now();
+        persist();
+      }
       return false;
     }
+    if (report) {
+      window.setTimeout(() => pushChat(id, `${hello(id)}${REDIRECT}`), 900);
+      return true;
+    }
+    if (BUSY.has(id)) {
+      window.setTimeout(() => pushChat(id, `${hello(id)}Я на совещании, напишу позже.`), 900);
+      return true;
+    }
     return false;
+  }
+
+  function handleChannel(id, line) {
+    touch();
+    const text = String(line.text || "");
+    const report = looksLikeReport(text, line.files);
+    if (id === "c-it") {
+      if (report) noteReport("канал #it");
+      replyInChannel(text, report);
+      return;
+    }
+    if (!report) return;
+    const speaker = { "c-general": "hr", "c-sales": "misha", "c-projects": "colleague", "c-hr": "hr" }[id] || "hr";
+    window.setTimeout(() => pushChat(id, `${hello(speaker)}${REDIRECT}`), 900);
+  }
+
+  function replyInChannel(text, report) {
+    const fallback = report
+      ? `${hello("it")}Вижу. Опишите, от кого сообщение и что просили сделать. Ссылку лучше пересказать, код и пароль сюда не вставляйте.`
+      : `${hello("it")}Напишите, что случилось с доступом или письмом. Если просят код или пароль, это уже повод остановиться.`;
+    const deliver = (answer) => pushChat("c-it", answer || fallback);
+    if (!window.NordAI || !NordAI.enabled()) {
+      window.setTimeout(() => deliver(fallback), 900);
+      return;
+    }
+    const messages = (state.chat["c-it"] || []).slice(-8).map((item) => ({
+      from: item.who === "you" ? "you" : "it",
+      role: item.who === "you" ? "user" : "assistant",
+      text: item.text
+    }));
+    if (!messages.length) messages.push({ from: "you", role: "user", text });
+    NordAI.reply({
+      personaId: "it",
+      player: state.name,
+      channel: "chat",
+      note: note("it") + (report ? " Это сообщение в канале #it, его достаточно как репорт. Разбери ситуацию." : " Это сообщение в канале #it."),
+      messages
+    }).then((res) => {
+      if (res && res.ignore) return;
+      window.setTimeout(() => deliver((res && res.text) || fallback), 600);
+    });
   }
 
   function note(id) {
@@ -907,15 +976,20 @@
 
   function onSent(letter) {
     touch();
-    const emails = letter.to.concat(letter.cc || []).map((person) => person.email);
+    const people = [letter.from, ...(letter.to || []), ...(letter.cc || [])].filter((person) => person && person.email && person.email !== player().email);
+    const emails = people.map((person) => person.email);
     const row = scene();
-    if (emails.includes(SUPPORT)) row.contactedSupport = true;
-    if (emails.includes("k.antonov@nord.example")) row.contactedKirill = true;
+    const latest = [...(letter.thread || [])].reverse().find((part) => part.email === player().email);
+    const report = looksLikeReport(latest && latest.text, letter.from && letter.from.email === player().email ? letter.files : []);
+    const official = emails.find((email) => OFFICIAL_MAIL.has(email));
+    if (report && official) {
+      noteReport(official === SUPPORT ? "it-support" : official === "k.antonov@nord.example" ? "Кирилл Антонов" : "Сергей Плотников");
+    }
     if (emails.includes(PHISH_MAIL)) row.phishAnswered = true;
     const persona = emails.map(personaByEmail).find(Boolean);
     persist();
     if (!persona) return;
-    const source = (letter.replyTo && (state.letters || []).find((item) => item.id === letter.replyTo)) || letter;
+    const source = letter;
     const author = personById(persona);
     const history = (source.thread || []).map((part) => ({
       from: part.email === player().email ? "you" : persona,
@@ -927,7 +1001,10 @@
       const clean = String(text || "").trim();
       if (!clean) return;
       source.thread.push({ author: author.name, email: author.email, stamp: stamp(), text: clean });
+      source.boxes = Array.from(new Set([...(source.boxes || [source.folder === "sent" ? "sent" : "inbox"]), "inbox"]));
       source.read = false;
+      source.stamp = stamp();
+      state.letters = [source, ...(state.letters || []).filter((item) => item.id !== source.id)];
       if (persona === "support") {
         row.supportAnswered = true;
         row.supportAnsweredAt = Date.now();
@@ -937,25 +1014,31 @@
         row.kirillAnsweredAt = Date.now();
       }
       persist();
+      Desk.refreshBadges();
       mailToast(author.name, source.subject, author.icon, source.id);
       const win = document.querySelector('.win[data-app="mail"]');
-      if (win && !win.classList.contains("min") && state.mailUi && state.mailUi.letter === source.id) Desk.paint("mail");
+      if (win && !win.classList.contains("min")) Desk.paint("mail");
       tick();
+    }
+    function steered(text) {
+      if (!(report && !official && persona !== "oleg")) return text;
+      if (/it-support|#it|кирилл|сергей|информацион/i.test(String(text || ""))) return text;
+      return REDIRECT;
     }
     window.setTimeout(() => {
       if (!window.NordAI || !NordAI.enabled()) {
-        deliver(mailFallback(persona));
+        deliver(steered(mailFallback(persona)));
         return;
       }
       NordAI.reply({
         personaId: persona,
         player: state.name,
         channel: "mail",
-        note: note(persona),
+        note: note(persona) + (report && !official ? " Человек описывает проблему не тому адресату. Скажи, что это нужно сообщить Сергею Плотникову, Кириллу Антонову, на it-support@nord.example или в канал #it. Сам вопрос не закрывай." : ""),
         messages: history
       }).then((res) => {
         if (res && res.ignore) return;
-        deliver((res && res.text) || mailFallback(persona));
+        deliver(steered((res && res.text) || mailFallback(persona)));
       });
     }, delay);
   }
@@ -1068,6 +1151,6 @@
   const endStage = document.getElementById("endStage");
   if (endStage) endStage.addEventListener("click", () => openDebrief("manual"));
 
-  window.Stage1 = { prepare, begin, richText, paintBrowser, paintLogin, paintAccount, paintJournal, handleChat, onSent, note, shoot: armShot, touch };
+  window.Stage1 = { prepare, begin, richText, paintBrowser, paintLogin, paintAccount, paintJournal, handleChat, handleChannel, onSent, note, shoot: armShot, touch };
   if (state.onboardingDone && scene().started && !tick.timer) tick.timer = window.setInterval(tick, 2000);
 }());

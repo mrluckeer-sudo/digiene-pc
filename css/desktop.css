@@ -834,7 +834,8 @@ button, input, textarea { font: inherit; color: inherit; }
 .draft-mark { width: 14px; height: 14px; display: block; }
 .slack-item .dot { width: 8px; height: 8px; border-radius: 99px; background: var(--teal); display: block; }
 .slack-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.slack-head { padding: 12px 16px 8px; border-bottom: 1px solid var(--line); }
+.slack-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px 8px; border-bottom: 1px solid var(--line); }
+.slack-head .head-ava { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; background: #e7eef2; display: grid; place-items: center; font-weight: 700; flex: none; }
 .slack-head p { margin: 2px 0 0; }
 .typing-status { color: var(--teal); font-weight: 600; }
 .typing-hint { display: flex; align-items: center; gap: 8px; margin: 0 16px 8px; color: var(--muted); font-size: 13px; }
@@ -865,6 +866,7 @@ button, input, textarea { font: inherit; color: inherit; }
 .draft-file span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .draft-x { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; }
 .slack-about { border-left: 1px solid var(--line); background: #f7f5f0; padding: 14px; overflow: auto; }
+.slack-about .about-ava { width: 72px; height: 72px; border-radius: 16px; object-fit: cover; background: #e7eef2; display: grid; place-items: center; font-weight: 700; margin-bottom: 8px; }
 .cal { flex: 1; min-height: 0; display: grid; grid-template-columns: 196px minmax(0, 1fr) 260px; background: white; }
 .cal-side, .cal-detail { min-height: 0; overflow: auto; padding: 14px; background: #f7f5f0; }
 .cal-detail { border-left: 1px solid var(--line); }
@@ -1021,7 +1023,8 @@ button, input, textarea { font: inherit; color: inherit; }
   cursor: pointer;
   border-radius: 10px;
 }
-.folders button { padding: 8px 10px; }
+.folders button { padding: 8px 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; }
+.folders button .count { min-width: 1.2em; color: #1b6f78; font-weight: 700; text-align: right; }
 .folders button.on, .file-row.on { background: white; }
 .mail-main, .file-main { min-width: 0; min-height: 0; overflow: auto; }
 .meta { margin: 0 0 4px; color: var(--muted); font-size: 13px; }

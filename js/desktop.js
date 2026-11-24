@@ -145,6 +145,7 @@ function img(src, alt) {
 }
 
 function unreadCount() {
+  if (window.NordMail) return NordMail.unread();
   if (state.letters) return state.letters.filter((letter) => letter.folder === "inbox" && !letter.read).length;
   return MAILS.filter((mail) => !state.read[mail.id]).length;
 }
@@ -861,7 +862,8 @@ function toast(options) {
       const letter = (state.letters || []).find((item) => item.id === options.letterId);
       if (!state.mailUi) state.mailUi = { folder: "inbox", letter: "", mode: "read", view: "mail", compose: null };
       if (letter) {
-        state.mailUi.folder = letter.folder;
+        const boxes = letter.boxes || [letter.folder];
+        state.mailUi.folder = boxes.includes("inbox") ? "inbox" : (letter.folder || "inbox");
         state.mailUi.letter = letter.id;
         state.mailUi.mode = "read";
         state.mailUi.view = "mail";
